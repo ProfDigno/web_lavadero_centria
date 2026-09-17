@@ -1,0 +1,1393 @@
+(function () {
+  const navToggle = document.querySelector(".nav-toggle");
+  const mainNavigation = document.querySelector("#main-navigation");
+  const analysisPersonalSelect = document.querySelector("[data-analysis-personal-select]");
+
+  if (analysisPersonalSelect) {
+    analysisPersonalSelect.addEventListener("change", () => {
+      const form = analysisPersonalSelect.closest("form");
+      if (form) form.submit();
+    });
+  }
+
+  if (navToggle && mainNavigation) {
+    const desktopQuery = window.matchMedia("(min-width: 1000px)");
+
+    function closeNavigation() {
+      mainNavigation.classList.remove("is-open");
+      navToggle.setAttribute("aria-expanded", "false");
+      navToggle.setAttribute("aria-label", "Abrir menú de navegación");
+    }
+
+    function toggleNavigation() {
+      const isOpen = navToggle.getAttribute("aria-expanded") === "true";
+      navToggle.setAttribute("aria-expanded", String(!isOpen));
+      navToggle.setAttribute("aria-label", isOpen ? "Abrir menú de navegación" : "Cerrar menú de navegación");
+      mainNavigation.classList.toggle("is-open", !isOpen);
+    }
+
+    navToggle.addEventListener("click", toggleNavigation);
+    mainNavigation.querySelectorAll("a").forEach((link) => link.addEventListener("click", closeNavigation));
+
+    const navMenus = Array.from(mainNavigation.querySelectorAll("details.nav-menu"));
+
+    function positionOpenSubmenus() {
+      if (!window.matchMedia("(min-width: 1000px)").matches) return;
+      navMenus.forEach((menu) => {
+        if (!menu.open) return;
+        const summary = menu.querySelector("summary");
+        const submenu = menu.querySelector(".nav-submenu");
+        if (!summary || !submenu) return;
+        const rect = summary.getBoundingClientRect();
+        submenu.style.setProperty("--submenu-top", `${Math.max(12, rect.top)}px`);
+        submenu.style.setProperty("--submenu-left", `${rect.right + 10}px`);
+      });
+    }
+
+    navMenus.forEach((menu) => {
+      menu.addEventListener("toggle", () => {
+        if (!menu.open) return;
+        window.requestAnimationFrame(() => {
+          positionOpenSubmenus();
+        });
+      });
+    });
+
+    window.addEventListener("resize", positionOpenSubmenus);
+    mainNavigation.addEventListener("scroll", positionOpenSubmenus, { passive: true });
+
+    document.addEventListener("click", (event) => {
+      if (navToggle.getAttribute("aria-expanded") !== "true") return;
+      if (!mainNavigation.contains(event.target) && !navToggle.contains(event.target)) closeNavigation();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && navToggle.getAttribute("aria-expanded") === "true") {
+        closeNavigation();
+        navToggle.focus();
+      }
+    });
+
+    desktopQuery.addEventListener("change", (event) => {
+      if (event.matches) closeNavigation();
+    });
+  }
+
+  const clientIdInput = document.querySelector("[data-client-id]");
+  const quickClient = document.querySelector("[data-quick-client]");
+  const clientSearch = document.querySelector("[data-client-search]");
+  const clientResults = document.querySelector("[data-client-results]");
+
+  function isRowInteractiveTarget(target) {
+    return Boolean(target.closest("a, button, form, input, select, textarea"));
+  }
+
+  document.addEventListener("click", (event) => {
+    const row = event.target.closest("[data-row-link]");
+    if (!row || isRowInteractiveTarget(event.target)) return;
+    window.location.assign(row.dataset.rowLink);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    const row = event.target.closest("[data-row-link]");
+    if (!row || event.target !== row || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    window.location.assign(row.dataset.rowLink);
+  });
+
+  function fillIfBlank(input, value) {
+    if (!input || input.value.trim() || !value) return;
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function prefillClientFromGroup(select) {
+    const option = select.options[select.selectedIndex];
+    if (!option || !option.value) return;
+    const scope = select.closest("form") || document;
+    fillIfBlank(scope.querySelector("input[name='ruc'], input[name='nuevo_ruc']"), option.dataset.ruc || "");
+    fillIfBlank(scope.querySelector("input[name='nombre'], input[name='nuevo_nombre']"), option.dataset.razonSocial || "");
+    fillIfBlank(scope.querySelector("input[name='direccion'], input[name='nuevo_direccion']"), option.dataset.direccion || "");
+    fillIfBlank(scope.querySelector("input[name='telefono'], input[name='nuevo_telefono']"), option.dataset.telefono || "");
+    fillIfBlank(scope.querySelector("input[name='email'], input[name='nuevo_email']"), option.dataset.email || "");
+  }
+
+  document.querySelectorAll("select[name='grupo_cliente_id'], select[name='nuevo_grupo_cliente_id']").forEach((select) => {
+    select.addEventListener("change", () => prefillClientFromGroup(select));
+  });
+
+  if (clientIdInput && quickClient) {
+    let clientOptions = [];
+    let chapaLookupSequence = 0;
+    const quickFields = {
+      chapa: quickClient.querySelector("input[name='nueva_chapa']"),
+      marcaModelo: quickClient.querySelector("input[name='nuevo_marca_modelo']"),
+      ruc: quickClient.querySelector("input[name='nuevo_ruc']"),
+      nombre: quickClient.querySelector("input[name='nuevo_nombre']"),
+      telefono: quickClient.querySelector("input[name='nuevo_telefono']"),
+      direccion: quickClient.querySelector("input[name='nuevo_direccion']"),
+      email: quickClient.querySelector("input[name='nuevo_email']"),
+      grupo: quickClient.querySelector("select[name='nuevo_grupo_cliente_id']")
+    };
+    const quickRucStatus = quickClient.querySelector("[data-quick-ruc-status]");
+    const quickDetails = quickClient.querySelector("[data-quick-details]");
+    const quickDetailsToggle = quickClient.querySelector("[data-quick-details-toggle]");
+
+    function setQuickDetailsExpanded(expanded) {
+      if (!quickDetails || !quickDetailsToggle) return;
+      quickDetails.classList.toggle("is-hidden", !expanded);
+      quickDetailsToggle.setAttribute("aria-expanded", String(expanded));
+      quickDetailsToggle.textContent = expanded ? "Ocultar datos adicionales" : "Mostrar datos adicionales";
+    }
+
+    quickDetailsToggle?.addEventListener("click", () => {
+      const expanded = quickDetailsToggle.getAttribute("aria-expanded") === "true";
+      setQuickDetailsExpanded(!expanded);
+    });
+
+    function setDetectedClientReadonly(readonly) {
+      [quickFields.marcaModelo, quickFields.ruc, quickFields.nombre, quickFields.telefono, quickFields.direccion, quickFields.email]
+        .filter(Boolean)
+        .forEach((input) => {
+          input.readOnly = readonly;
+        });
+      if (quickFields.grupo) quickFields.grupo.disabled = readonly;
+    }
+
+    function normalizeChapa(value) {
+      return String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+    }
+
+    function clearDetectedClientFields() {
+      if (quickClient.dataset.detectedClient !== "true") return;
+      [quickFields.marcaModelo, quickFields.ruc, quickFields.nombre, quickFields.telefono, quickFields.direccion, quickFields.email]
+        .filter(Boolean)
+        .forEach((input) => {
+          input.value = "";
+        });
+      if (quickFields.grupo) quickFields.grupo.value = "";
+      delete quickClient.dataset.detectedClient;
+    }
+
+    function resetDetectedClient() {
+      chapaLookupSequence += 1;
+      clientIdInput.value = "";
+      clearDetectedClientFields();
+      setDetectedClientReadonly(false);
+      syncClientMode();
+    }
+
+    function setQuickRucStatus(message, state) {
+      if (!quickRucStatus) return;
+      quickRucStatus.textContent = message || "";
+      quickRucStatus.dataset.state = state || "";
+    }
+
+    async function lookupQuickRuc() {
+      if (!quickFields.ruc) return;
+      const ruc = quickFields.ruc.value.trim();
+      if (!ruc) {
+        setQuickRucStatus("");
+        return;
+      }
+
+      setQuickRucStatus("Consultando RUC...", "pending");
+      try {
+        const response = await fetch(`/facturas/ruc?ruc=${encodeURIComponent(ruc)}`, {
+          headers: { Accept: "application/json" }
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          setQuickRucStatus(data.message || "No se pudo consultar el RUC.", "error");
+          return;
+        }
+        if (!data.found) {
+          setQuickRucStatus(data.message || "RUC no existe.", "error");
+          return;
+        }
+        if (quickFields.nombre) {
+          quickFields.nombre.value = data.nombre || "";
+          quickFields.nombre.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        if (data.ruc) {
+          quickFields.ruc.value = data.ruc;
+          quickFields.ruc.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        setQuickRucStatus(`Encontrado${data.estado ? `: ${data.estado}` : ""}`, "success");
+      } catch (error) {
+        setQuickRucStatus("No se pudo consultar el RUC.", "error");
+      }
+    }
+
+    quickFields.ruc?.addEventListener("blur", lookupQuickRuc);
+
+    async function lookupQuickChapa() {
+      const chapa = normalizeChapa(quickFields.chapa?.value);
+      if (!chapa) return;
+      const lookupSequence = ++chapaLookupSequence;
+      try {
+        const response = await fetch(`/clientes/buscar?q=${encodeURIComponent(chapa)}`, {
+          headers: { Accept: "application/json" }
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (lookupSequence !== chapaLookupSequence || normalizeChapa(quickFields.chapa?.value) !== chapa) return;
+        const cliente = (data.clientes || []).find((item) => normalizeChapa(item.chapa) === chapa);
+        if (!cliente) return;
+
+        clientIdInput.value = cliente.id || "";
+        quickFields.chapa.value = cliente.chapa || quickFields.chapa.value;
+        quickFields.marcaModelo.value = cliente.marca_modelo || "";
+        quickFields.ruc.value = cliente.ruc || "";
+        quickFields.nombre.value = cliente.nombre || "";
+        quickFields.telefono.value = cliente.telefono || "";
+        quickFields.direccion.value = cliente.direccion || "";
+        quickFields.email.value = cliente.email || "";
+        if (quickFields.grupo) quickFields.grupo.value = cliente.grupo_cliente_id || cliente.fk_idgrupo_cliente || "";
+        quickClient.dataset.detectedClient = "true";
+        setDetectedClientReadonly(true);
+        syncClientMode(true);
+      } catch (error) {
+        // La búsqueda automática es auxiliar; si falla, se mantiene el alta rápida.
+      }
+    }
+
+    quickFields.chapa?.addEventListener("input", () => {
+      if (clientIdInput.value || quickClient.dataset.detectedClient === "true") resetDetectedClient();
+      else chapaLookupSequence += 1;
+    });
+
+    quickFields.chapa?.addEventListener("blur", lookupQuickChapa);
+
+    function optionText(cliente) {
+      return `${cliente.chapa} - ${cliente.marca_modelo}${cliente.nombre ? ` - ${cliente.nombre}` : ""}${cliente.grupo_nombre ? ` (${cliente.grupo_nombre})` : ""}`;
+    }
+
+    function syncClientMode(keepVisible = false) {
+      const creating = !clientIdInput.value;
+      quickClient.classList.toggle("is-hidden", !creating && !keepVisible);
+      quickClient.querySelectorAll("input[name='nueva_chapa'], input[name='nuevo_marca_modelo']").forEach((input) => {
+        input.required = creating;
+      });
+    }
+
+    function chooseClient(cliente) {
+      if (!cliente) return;
+      clientIdInput.value = cliente.id || "";
+      clientIdInput.dispatchEvent(new Event("input", { bubbles: true }));
+      if (clientSearch) {
+        clientSearch.value = optionText(cliente);
+        clientSearch.dataset.clientChapa = cliente.chapa || "";
+        clientSearch.dataset.clientNombre = cliente.nombre || "";
+      }
+      if (clientResults) clientResults.classList.add("is-hidden");
+      syncClientMode();
+    }
+
+    function renderClientResults(matches, term) {
+      if (!clientResults) return;
+      clientResults.innerHTML = "";
+      if (!term) {
+        clientResults.classList.add("is-hidden");
+        return;
+      }
+      const visibleMatches = matches.slice(0, 8);
+      if (!visibleMatches.length) {
+        const empty = document.createElement("div");
+        empty.className = "client-result-empty";
+        empty.textContent = "Sin clientes encontrados";
+        clientResults.appendChild(empty);
+        clientResults.classList.remove("is-hidden");
+        return;
+      }
+      visibleMatches.forEach((item) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "client-result";
+        button.textContent = optionText(item);
+        button.addEventListener("click", () => chooseClient(item));
+        clientResults.appendChild(button);
+      });
+      clientResults.classList.remove("is-hidden");
+    }
+
+    if (clientSearch) {
+      let searchTimer = null;
+      clientSearch.addEventListener("input", () => {
+        clearTimeout(searchTimer);
+        clientIdInput.value = "";
+        clearDetectedClientFields();
+        setDetectedClientReadonly(false);
+        delete clientSearch.dataset.clientChapa;
+        delete clientSearch.dataset.clientNombre;
+        syncClientMode();
+        searchTimer = setTimeout(async () => {
+          const term = clientSearch.value.trim();
+          try {
+            const response = await fetch(`/clientes/buscar?q=${encodeURIComponent(term)}`, {
+              headers: { Accept: "application/json" }
+            });
+            if (!response.ok) throw new Error("No se pudo buscar clientes.");
+            const data = await response.json();
+            clientOptions = data.clientes || [];
+            const matchedItems = clientOptions;
+            renderClientResults(matchedItems, term.toLowerCase());
+            if (term && matchedItems.length === 1) {
+              chooseClient(matchedItems[0]);
+            }
+          } catch (error) {
+            renderClientResults([], term.toLowerCase());
+          }
+        }, 250);
+      });
+    }
+  if (quickFields.chapa) {
+      quickFields.chapa.addEventListener("change", () => {
+        const chapa = quickFields.chapa.value.trim().toUpperCase();
+        if (!chapa) return;
+        const match = clientOptions.find((item) => String(item.chapa || "").trim().toUpperCase() === chapa);
+        if (!match) return;
+        chooseClient(match);
+      });
+    }
+    syncClientMode();
+  }
+
+  function normalizeSearchText(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  }
+
+  document.querySelectorAll("[data-crud-search-scope]").forEach((scope) => {
+    const input = scope.querySelector("[data-crud-search]");
+    const rows = Array.from(scope.querySelectorAll("[data-crud-row]"));
+    const count = scope.querySelector("[data-crud-search-count]");
+    const noResults = scope.querySelector("[data-crud-no-results]");
+    const empty = scope.querySelector("[data-crud-empty]");
+    if (!input || !rows.length) return;
+
+    const searchableRows = rows.map((row) => ({
+      row,
+      text: normalizeSearchText(`${row.dataset.search || ""} ${row.textContent || ""}`)
+    }));
+
+    function updateCrudSearch() {
+      const term = normalizeSearchText(input.value);
+      let visible = 0;
+      searchableRows.forEach((item) => {
+        const match = !term || item.text.includes(term);
+        item.row.classList.toggle("is-hidden", !match);
+        if (match) visible += 1;
+      });
+      if (count) {
+        const label = visible === 1 ? "registro" : "registros";
+        count.textContent = `${visible} ${label}`;
+      }
+      if (noResults) noResults.classList.toggle("is-hidden", visible !== 0);
+      if (empty) empty.classList.add("is-hidden");
+    }
+
+    input.addEventListener("input", updateCrudSearch);
+    updateCrudSearch();
+  });
+
+  document.querySelectorAll("[data-wash-table]").forEach((table) => {
+    const input = table.closest("section")?.querySelector("[data-wash-search]");
+    const rows = Array.from(table.querySelectorAll("[data-wash-row]"));
+    const noResults = table.querySelector("[data-wash-no-results]");
+    const serverEmpty = table.querySelector("[data-wash-server-empty]");
+    if (!input || !rows.length) return;
+
+    const searchableRows = rows.map((row) => ({
+      row,
+      vehicle: normalizeSearchText(row.dataset.washVehicle || "")
+    }));
+
+    function updateWashSearch() {
+      const term = normalizeSearchText(input.value);
+      let visible = 0;
+      searchableRows.forEach((item) => {
+        const match = !term || item.vehicle.includes(term);
+        item.row.classList.toggle("is-hidden", !match);
+        if (match) visible += 1;
+      });
+      if (noResults) noResults.classList.toggle("is-hidden", visible !== 0 || Boolean(serverEmpty));
+    }
+
+    input.addEventListener("input", updateWashSearch);
+    updateWashSearch();
+  });
+
+  document.querySelectorAll("[data-dashboard-wash-list]").forEach((list) => {
+    const input = document.querySelector("[data-dashboard-wash-search]");
+    const rows = Array.from(list.querySelectorAll("[data-dashboard-wash-row]"));
+    const noResults = list.querySelector("[data-dashboard-wash-no-results]");
+    if (!input || !rows.length) return;
+
+    const searchableRows = rows.map((row) => ({
+      row,
+      vehicle: normalizeSearchText(row.dataset.washVehicle || "")
+    }));
+
+    function updateDashboardWashSearch() {
+      const term = normalizeSearchText(input.value);
+      let visible = 0;
+      searchableRows.forEach((item) => {
+        const match = !term || item.vehicle.includes(term);
+        item.row.classList.toggle("is-hidden", !match);
+        if (match) visible += 1;
+      });
+      if (noResults) noResults.classList.toggle("is-hidden", visible !== 0);
+    }
+
+    input.addEventListener("input", updateDashboardWashSearch);
+    updateDashboardWashSearch();
+  });
+
+  const roleSelectionRows = Array.from(document.querySelectorAll(".role-select-row[data-role-id]"));
+  const rolePermissionRows = Array.from(document.querySelectorAll(".role-item-row[data-role-id]"));
+  const rolePermissionPanel = document.querySelector("[data-role-items-panel]");
+  const roleSelectionLabel = document.querySelector("[data-selected-role-label]");
+  const rolePermissionPlaceholder = document.querySelector("[data-role-items-placeholder]");
+
+  if (roleSelectionRows.length && rolePermissionPanel) {
+    let selectedRoleId = "";
+    const rolePermissionCount = rolePermissionPanel.querySelector("[data-crud-search-count]");
+
+    function showRolePermissions(roleId, roleName) {
+      selectedRoleId = roleId;
+      roleSelectionRows.forEach((row) => {
+        row.classList.toggle("is-selected", row.dataset.roleId === roleId);
+      });
+      let visible = 0;
+      rolePermissionRows.forEach((row) => {
+        const matches = row.dataset.roleId === roleId;
+        row.classList.toggle("is-hidden", !matches);
+        if (matches) visible += 1;
+      });
+      if (rolePermissionPlaceholder) {
+        rolePermissionPlaceholder.classList.toggle("is-hidden", visible > 0);
+        if (!visible) rolePermissionPlaceholder.textContent = "Este roll no tiene eventos asignados.";
+      }
+      if (roleSelectionLabel) {
+        roleSelectionLabel.textContent = `${roleName} · ${visible} evento${visible === 1 ? "" : "s"} asignado${visible === 1 ? "" : "s"}`;
+      }
+      if (rolePermissionCount) rolePermissionCount.textContent = `${visible} evento${visible === 1 ? "" : "s"}`;
+      const itemSearch = rolePermissionPanel.querySelector("[data-crud-search]");
+      if (itemSearch) itemSearch.value = "";
+    }
+
+    rolePermissionRows.forEach((row) => row.classList.add("is-hidden"));
+    const rolePermissionSearch = rolePermissionPanel.querySelector("[data-crud-search]");
+    rolePermissionSearch?.addEventListener("input", () => {
+      const term = normalizeSearchText(rolePermissionSearch.value);
+      let visible = 0;
+      rolePermissionRows.forEach((row) => {
+        const matches = selectedRoleId && row.dataset.roleId === selectedRoleId && normalizeSearchText(`${row.dataset.search || ""} ${row.textContent || ""}`).includes(term);
+        row.classList.toggle("is-hidden", !matches);
+        if (matches) visible += 1;
+      });
+      if (rolePermissionPlaceholder) rolePermissionPlaceholder.classList.toggle("is-hidden", visible > 0 || !selectedRoleId);
+      if (rolePermissionCount) rolePermissionCount.textContent = `${visible} evento${visible === 1 ? "" : "s"}`;
+    });
+    roleSelectionRows.forEach((row) => {
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("a, button, form, input, label")) return;
+        const roleName = row.querySelector("td:nth-child(2)")?.textContent.trim() || "Roll";
+        showRolePermissions(row.dataset.roleId, roleName);
+      });
+    });
+  }
+
+  const relatedGroupRows = Array.from(document.querySelectorAll("[data-related-group-row]"));
+  const relatedPanels = Array.from(document.querySelectorAll("[data-related-panel]"));
+  const relatedEmpty = document.querySelector("[data-related-empty]");
+  const tabButtons = Array.from(document.querySelectorAll("[data-tab-button]"));
+  document.querySelectorAll("[data-analysis-client-row]").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("a, button, form, input, label")) return;
+      window.location.href = row.dataset.clientUrl;
+    });
+  });
+  function showTab(tabId) {
+    const panelScope = document.querySelector(`[data-tab-panel="${tabId}"]`)?.closest("[data-related-panel]");
+    if (!panelScope) return;
+    panelScope.querySelectorAll("[data-tab-button]").forEach((button) => {
+      button.classList.toggle("is-selected", button.dataset.tabButton === tabId);
+    });
+    panelScope.querySelectorAll("[data-tab-panel]").forEach((panel) => {
+      panel.classList.toggle("is-hidden", panel.dataset.tabPanel !== tabId);
+    });
+  }
+
+  if (relatedGroupRows.length && relatedPanels.length) {
+    function showRelatedItems(groupId) {
+      relatedGroupRows.forEach((row) => {
+        row.classList.toggle("is-selected", row.dataset.relatedGroupRow === groupId);
+      });
+      relatedPanels.forEach((panel) => {
+        panel.classList.toggle("is-hidden", panel.dataset.relatedPanel !== groupId);
+      });
+      if (relatedEmpty) relatedEmpty.classList.add("is-hidden");
+    }
+
+    relatedGroupRows.forEach((row) => {
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("a, button, form, input, label")) return;
+        showRelatedItems(row.dataset.relatedGroupRow);
+      });
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    const selectedRelated = params.get("related");
+    if (selectedRelated) {
+      showRelatedItems(selectedRelated);
+      const selectedTab = params.get("tab");
+      if (selectedTab) showTab(`${selectedTab}-${selectedRelated}`);
+    }
+  }
+
+  tabButtons.forEach((button) => {
+    button.addEventListener("click", () => showTab(button.dataset.tabButton));
+  });
+
+  document.querySelectorAll("[data-uppercase]").forEach((input) => {
+    input.value = input.value.toUpperCase();
+    input.addEventListener("input", () => {
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      input.value = input.value.toUpperCase();
+      input.setSelectionRange(start, end);
+    });
+  });
+
+  function parseIntegerMoney(value) {
+    const raw = String(value || "0").trim().replace(/[^\d.,-]/g, "");
+    let normalized = raw;
+    const lastDot = raw.lastIndexOf(".");
+    const lastComma = raw.lastIndexOf(",");
+
+    if (lastDot >= 0 && lastComma >= 0) {
+      const decimalSeparator = lastDot > lastComma ? "." : ",";
+      const thousandsSeparator = decimalSeparator === "." ? "," : ".";
+      normalized = raw.split(thousandsSeparator).join("").replace(decimalSeparator, ".");
+    } else if (lastDot >= 0) {
+      const decimals = raw.length - lastDot - 1;
+      normalized = decimals === 3 ? raw.replace(/\./g, "") : raw;
+    } else if (lastComma >= 0) {
+      const decimals = raw.length - lastComma - 1;
+      normalized = decimals === 3 ? raw.replace(/,/g, "") : raw.replace(",", ".");
+    }
+
+    const number = Number(normalized || 0);
+    return Number.isFinite(number) ? Math.round(number) : 0;
+  }
+
+  function formatGuarani(value) {
+    return new Intl.NumberFormat("es-PY", {
+      style: "currency",
+      currency: "PYG",
+      maximumFractionDigits: 0
+    }).format(parseIntegerMoney(value));
+  }
+
+  document.querySelectorAll("[data-money-input]").forEach((input) => {
+    if (input.value) input.value = formatGuarani(input.value);
+    input.addEventListener("focus", () => {
+      const value = parseIntegerMoney(input.value);
+      input.value = value ? String(value) : "";
+      input.select();
+    });
+    input.addEventListener("blur", () => {
+      if (!input.value.trim()) return;
+      input.value = formatGuarani(input.value);
+    });
+  });
+
+  const valeSaldoBox = document.querySelector("[data-vale-saldo-box]");
+  if (valeSaldoBox) {
+    const valeForm = valeSaldoBox.closest("form");
+    const personalInput = valeForm?.querySelector("select[name='fk_idpersonal']");
+    const fechaInput = valeForm?.querySelector("input[name='fecha_pago']");
+    const saldoNode = valeSaldoBox.querySelector("[data-vale-saldo]");
+    const comisionNode = valeSaldoBox.querySelector("[data-vale-comision]");
+    const valesNode = valeSaldoBox.querySelector("[data-vale-vales]");
+    let saldoOptionsRequest = 0;
+
+    function restoreValeOptionNames() {
+      personalInput?.querySelectorAll("option:not([value=''])").forEach((option) => {
+        if (!option.dataset.personalName) option.dataset.personalName = option.textContent.trim();
+        option.textContent = option.dataset.personalName;
+      });
+    }
+
+    async function updateValeOptions() {
+      if (!personalInput) return;
+      const fecha = fechaInput?.value || "";
+      const options = [...personalInput.querySelectorAll("option:not([value=''])")];
+      options.forEach((option) => {
+        if (!option.dataset.personalName) option.dataset.personalName = option.textContent.trim();
+      });
+      if (!fecha) {
+        restoreValeOptionNames();
+        return;
+      }
+
+      const requestId = ++saldoOptionsRequest;
+      try {
+        const response = await fetch(`/vales/saldos?fecha=${encodeURIComponent(fecha)}`, {
+          headers: { Accept: "application/json" }
+        });
+        if (!response.ok) throw new Error("No se pudieron obtener los saldos.");
+        const data = await response.json();
+        if (requestId !== saldoOptionsRequest) return;
+        const saldos = new Map((data.saldos || []).map((item) => [String(item.idpersonal), Number(item.saldo_personal || 0)]));
+        options.forEach((option) => {
+          const saldo = saldos.get(String(option.value)) || 0;
+          option.textContent = `${option.dataset.personalName} — Saldo: ${formatGuarani(saldo)}`;
+        });
+      } catch (error) {
+        if (requestId === saldoOptionsRequest) restoreValeOptionNames();
+      }
+    }
+
+    async function updateValeSaldo() {
+      const personalId = personalInput?.value || "";
+      const fecha = fechaInput?.value || "";
+      if (!personalId || !fecha) {
+        if (saldoNode) saldoNode.textContent = "Seleccione personal";
+        if (comisionNode) comisionNode.textContent = formatGuarani(0);
+        if (valesNode) valesNode.textContent = formatGuarani(0);
+        return;
+      }
+      if (saldoNode) saldoNode.textContent = "Calculando...";
+      try {
+        const response = await fetch(`/vales/saldo?fk_idpersonal=${encodeURIComponent(personalId)}&fecha=${encodeURIComponent(fecha)}`, {
+          headers: { Accept: "application/json" }
+        });
+        if (!response.ok) throw new Error("No se pudo obtener el saldo.");
+        const data = await response.json();
+        if (saldoNode) saldoNode.textContent = formatGuarani(data.saldo_personal || 0);
+        if (comisionNode) comisionNode.textContent = formatGuarani(data.total_comision_40 || 0);
+        if (valesNode) valesNode.textContent = formatGuarani(data.total_vales || 0);
+      } catch (error) {
+        if (saldoNode) saldoNode.textContent = "No disponible";
+      }
+    }
+
+    personalInput?.addEventListener("change", updateValeSaldo);
+    fechaInput?.addEventListener("change", () => {
+      updateValeOptions();
+      updateValeSaldo();
+    });
+    document.querySelector("[data-open-crud-modal]")?.addEventListener("click", () => {
+      window.setTimeout(() => {
+        updateValeOptions();
+        updateValeSaldo();
+      }, 0);
+    });
+    updateValeOptions();
+    updateValeSaldo();
+  }
+
+  const invoiceForm = document.querySelector("[data-invoice-form]");
+  if (invoiceForm) {
+    const clientIdInput = invoiceForm.querySelector("[data-invoice-client-id]");
+    const clientSearchInput = invoiceForm.querySelector("[data-invoice-client-search]");
+    const clientResultsBox = invoiceForm.querySelector("[data-invoice-client-results]");
+    const rucInput = invoiceForm.querySelector("input[name='cliente_ruc']");
+    const nombreInput = invoiceForm.querySelector("input[name='cliente_nombre']");
+    const rucStatus = invoiceForm.querySelector("[data-invoice-ruc-status]");
+    const itemsBox = invoiceForm.querySelector("[data-invoice-items]");
+    const itemTemplate = invoiceForm.querySelector("[data-invoice-item-template]");
+    const addItemButton = invoiceForm.querySelector("[data-add-invoice-item]");
+    const subtotalNode = invoiceForm.querySelector("[data-invoice-subtotal]");
+    const ivaNode = invoiceForm.querySelector("[data-invoice-iva]");
+    const totalNodeInvoice = invoiceForm.querySelector("[data-invoice-total]");
+
+    function invoiceQuantity(value) {
+      const number = Number(String(value || "0").replace(",", "."));
+      return Number.isFinite(number) ? number : 0;
+    }
+
+    function wireInvoiceMoney(input) {
+      if (!input || input.dataset.invoiceMoneyReady) return;
+      input.dataset.invoiceMoneyReady = "1";
+      if (input.value) input.value = formatGuarani(input.value);
+      input.addEventListener("focus", () => {
+        const value = parseIntegerMoney(input.value);
+        input.value = value ? String(value) : "";
+        input.select();
+      });
+      input.addEventListener("blur", () => {
+        if (input.value.trim()) input.value = formatGuarani(input.value);
+      });
+    }
+
+    function recalcInvoice() {
+      let total = 0;
+      itemsBox.querySelectorAll("[data-invoice-item-line]").forEach((line) => {
+        const quantity = invoiceQuantity(line.querySelector("[data-invoice-quantity]")?.value);
+        const price = parseIntegerMoney(line.querySelector("[data-invoice-price]")?.value);
+        const lineTotal = Math.round(quantity * price);
+        total += lineTotal;
+        const totalInput = line.querySelector("[data-invoice-line-total]");
+        if (totalInput) totalInput.value = formatGuarani(lineTotal);
+      });
+      if (subtotalNode) subtotalNode.textContent = formatGuarani(total);
+      if (ivaNode) ivaNode.textContent = formatGuarani(Math.round(total / 11));
+      if (totalNodeInvoice) totalNodeInvoice.textContent = formatGuarani(total);
+    }
+
+    function wireInvoiceLine(line) {
+      const service = line.querySelector("[data-invoice-service]");
+      const description = line.querySelector("input[name='descripcion']");
+      const quantity = line.querySelector("[data-invoice-quantity]");
+      const price = line.querySelector("[data-invoice-price]");
+      const remove = line.querySelector("[data-remove-invoice-item]");
+      wireInvoiceMoney(price);
+      if (description && !description.dataset.upperReady) {
+        description.dataset.upperReady = "1";
+        description.addEventListener("input", () => {
+          const start = description.selectionStart;
+          const end = description.selectionEnd;
+          description.value = description.value.toUpperCase();
+          description.setSelectionRange(start, end);
+        });
+      }
+      if (service) {
+        service.addEventListener("change", () => {
+          const option = service.options[service.selectedIndex];
+          if (!option || !option.value) return;
+          if (description) description.value = option.dataset.name || "";
+          if (price) price.value = formatGuarani(option.dataset.price || "0");
+          recalcInvoice();
+        });
+      }
+      [quantity, price].forEach((input) => {
+        if (!input) return;
+        input.addEventListener("input", recalcInvoice);
+        input.addEventListener("blur", recalcInvoice);
+      });
+      if (remove) {
+        remove.addEventListener("click", () => {
+          if (itemsBox.querySelectorAll("[data-invoice-item-line]").length <= 1) return;
+          line.remove();
+          recalcInvoice();
+        });
+      }
+    }
+
+    itemsBox.querySelectorAll("[data-invoice-item-line]").forEach(wireInvoiceLine);
+    recalcInvoice();
+
+    if (addItemButton && itemTemplate) {
+      addItemButton.addEventListener("click", () => {
+        const count = itemsBox.querySelectorAll("[data-invoice-item-line]").length;
+        if (count >= 9) return;
+        const fragment = itemTemplate.content.cloneNode(true);
+        const line = fragment.querySelector("[data-invoice-item-line]");
+        itemsBox.appendChild(fragment);
+        wireInvoiceLine(line);
+        recalcInvoice();
+      });
+    }
+
+    function chooseInvoiceClient(cliente) {
+      if (clientIdInput) clientIdInput.value = cliente.id || "";
+      const direccion = invoiceForm.querySelector("input[name='cliente_direccion']");
+      if (nombreInput) nombreInput.value = cliente.nombre || "";
+      if (rucInput) rucInput.value = cliente.ruc || "";
+      if (direccion) direccion.value = cliente.direccion || "";
+      if (clientSearchInput) clientSearchInput.value = [cliente.chapa, cliente.marca_modelo, cliente.nombre].filter(Boolean).join(" - ");
+      if (clientResultsBox) clientResultsBox.classList.add("is-hidden");
+      setRucStatus("");
+    }
+
+    function setRucStatus(message, state) {
+      if (!rucStatus) return;
+      rucStatus.textContent = message || "";
+      rucStatus.dataset.state = state || "";
+    }
+
+    async function lookupInvoiceRuc() {
+      if (!rucInput) return;
+      const ruc = rucInput.value.trim();
+      if (!ruc) {
+        setRucStatus("");
+        return;
+      }
+
+      setRucStatus("Consultando RUC...", "pending");
+      try {
+        const response = await fetch(`/facturas/ruc?ruc=${encodeURIComponent(ruc)}`, {
+          headers: { Accept: "application/json" }
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          setRucStatus(data.message || "No se pudo consultar el RUC.", "error");
+          return;
+        }
+        if (!data.found) {
+          setRucStatus(data.message || "RUC no existe.", "error");
+          return;
+        }
+        if (nombreInput) {
+          nombreInput.value = data.nombre || "";
+          nombreInput.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        if (rucInput && data.ruc) {
+          rucInput.value = data.ruc;
+          rucInput.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        setRucStatus(`Encontrado${data.estado ? `: ${data.estado}` : ""}`, "success");
+      } catch (error) {
+        setRucStatus("No se pudo consultar el RUC.", "error");
+      }
+    }
+
+    rucInput?.addEventListener("blur", lookupInvoiceRuc);
+
+    if (clientSearchInput && clientResultsBox) {
+      let timer = null;
+      clientSearchInput.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+          const term = clientSearchInput.value.trim();
+          clientResultsBox.innerHTML = "";
+          if (!term) {
+            clientResultsBox.classList.add("is-hidden");
+            return;
+          }
+          try {
+            const response = await fetch(`/clientes/buscar?q=${encodeURIComponent(term)}`, {
+              headers: { Accept: "application/json" }
+            });
+            if (!response.ok) throw new Error("No se pudo buscar clientes.");
+            const data = await response.json();
+            const clientes = (data.clientes || []).slice(0, 8);
+            if (!clientes.length) {
+              const empty = document.createElement("div");
+              empty.className = "client-result-empty";
+              empty.textContent = "Sin clientes encontrados";
+              clientResultsBox.appendChild(empty);
+            }
+            clientes.forEach((cliente) => {
+              const button = document.createElement("button");
+              button.type = "button";
+              button.className = "client-result";
+              button.textContent = [cliente.chapa, cliente.marca_modelo, cliente.nombre, cliente.ruc].filter(Boolean).join(" - ");
+              button.addEventListener("click", () => chooseInvoiceClient(cliente));
+              clientResultsBox.appendChild(button);
+            });
+            clientResultsBox.classList.remove("is-hidden");
+          } catch (error) {
+            clientResultsBox.classList.remove("is-hidden");
+          }
+        }, 250);
+      });
+    }
+  }
+
+  document.querySelectorAll("[data-image-input]").forEach((input) => {
+    const preview = document.querySelector(`[data-image-preview="${input.dataset.imageInput}"]`);
+    const pathInput = document.querySelector(`[data-image-path="${input.dataset.imageInput}"]`);
+    if (!preview) return;
+    input.addEventListener("change", () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      preview.src = URL.createObjectURL(file);
+      preview.classList.remove("is-hidden");
+      if (pathInput) {
+        const folder = input.dataset.imageFolder || "servicio-grupos";
+        const safeName = file.name
+          .replace(/\.[^/.]+$/, "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, "-")
+          .replace(/^-+|-+$/g, "") || "imagen";
+        pathInput.value = `/uploads/${folder}/${safeName}.png`;
+      }
+    });
+  });
+
+  const personalInputs = document.querySelector("[data-personal-inputs]");
+  const personalButtons = document.querySelector("[data-personal-buttons]");
+  if (personalInputs && personalButtons) {
+    function syncPersonalInputs() {
+      personalInputs.innerHTML = "";
+      personalButtons.querySelectorAll("[data-personal-id].is-selected").forEach((button) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "fk_idpersonal";
+        input.value = button.dataset.personalId;
+        personalInputs.appendChild(input);
+      });
+    }
+
+    personalButtons.querySelectorAll("[data-personal-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        button.classList.toggle("is-selected");
+        syncPersonalInputs();
+      });
+    });
+    syncPersonalInputs();
+  }
+
+  const list = document.querySelector("[data-services-list]");
+  const template = document.querySelector("[data-service-template]");
+  const addButton = document.querySelector("[data-add-service]");
+  const serviceGroupButtons = document.querySelector("[data-service-group-buttons]");
+  const totalNode = document.querySelector("[data-total]");
+  const comisionNode = document.querySelector("[data-comision]");
+  const saldoNode = document.querySelector("[data-saldo]");
+  let selectedServiceGroupId = serviceGroupButtons
+    ? (serviceGroupButtons.querySelector(".is-selected")?.dataset.serviceGroupId || "")
+    : "";
+
+  function parseMoney(value) {
+    return parseIntegerMoney(value);
+  }
+
+  function format(value) {
+    return new Intl.NumberFormat("es-PY", { maximumFractionDigits: 0 }).format(value);
+  }
+
+  function recalc() {
+    if (!list) return;
+    let total = 0;
+    list.querySelectorAll("[data-price-input]").forEach((input) => {
+      total += parseMoney(input.value);
+    });
+    if (totalNode) totalNode.textContent = format(total);
+    if (comisionNode) comisionNode.textContent = format(total * 0.4);
+    if (saldoNode) saldoNode.textContent = format(total * 0.6);
+  }
+
+  function applyServiceGroupFilter(select) {
+    if (!select) return;
+    let selectedOptionVisible = true;
+    Array.from(select.options).forEach((option) => {
+      const optionGroupId = option.dataset.serviceGroupId || "";
+      const visible = !option.value || !selectedServiceGroupId || optionGroupId === selectedServiceGroupId;
+      option.hidden = !visible;
+      if (option.selected && !visible) selectedOptionVisible = false;
+    });
+    if (!selectedOptionVisible) {
+      select.value = "";
+      const input = select.closest(".service-line")?.querySelector("[data-price-input]");
+      if (input) input.value = "";
+    }
+  }
+
+  function applyServiceGroupToAllLines() {
+    if (!list) return;
+    list.querySelectorAll("[data-service-price]").forEach(applyServiceGroupFilter);
+    recalc();
+  }
+
+  function wireLine(line) {
+    const select = line.querySelector("[data-service-price]");
+    const input = line.querySelector("[data-price-input]");
+    const remove = line.querySelector("[data-remove-service]");
+    if (select && input) {
+      if (input.value) input.value = String(parseIntegerMoney(input.value));
+      applyServiceGroupFilter(select);
+      select.addEventListener("change", () => {
+        const option = select.options[select.selectedIndex];
+        input.value = option && option.dataset.price ? String(parseIntegerMoney(option.dataset.price)) : "";
+        recalc();
+      });
+      input.addEventListener("input", recalc);
+    }
+    if (remove) {
+      remove.addEventListener("click", () => {
+        if (list.querySelectorAll(".service-line").length > 1) line.remove();
+        recalc();
+      });
+    }
+  }
+
+  if (list) {
+    list.querySelectorAll(".service-line").forEach(wireLine);
+    if (serviceGroupButtons) {
+      serviceGroupButtons.querySelectorAll("[data-service-group-id]").forEach((button) => {
+        button.addEventListener("click", () => {
+          selectedServiceGroupId = button.dataset.serviceGroupId || "";
+          serviceGroupButtons.querySelectorAll("[data-service-group-id]").forEach((item) => item.classList.remove("is-selected"));
+          button.classList.add("is-selected");
+          applyServiceGroupToAllLines();
+        });
+      });
+      applyServiceGroupToAllLines();
+    }
+    addButton.addEventListener("click", () => {
+      const fragment = template.content.cloneNode(true);
+      const line = fragment.querySelector(".service-line");
+      list.appendChild(fragment);
+      wireLine(line);
+    });
+    recalc();
+  }
+
+  const newWashForm = document.querySelector("[data-new-wash-form]");
+  const newWashModal = document.querySelector("[data-new-wash-modal]");
+  if (newWashForm && newWashModal) {
+    const fields = {
+      auto: newWashModal.querySelector("[data-new-wash-auto]"),
+      client: newWashModal.querySelector("[data-new-wash-client]"),
+      personal: newWashModal.querySelector("[data-new-wash-personal]"),
+      services: newWashModal.querySelector("[data-new-wash-services]"),
+      total: newWashModal.querySelector("[data-new-wash-total]")
+    };
+    const confirmButton = newWashModal.querySelector("[data-new-wash-confirm]");
+    const cancelButton = newWashModal.querySelector("[data-new-wash-cancel]");
+
+    function closeNewWashModal() {
+      newWashModal.classList.add("is-hidden");
+    }
+
+    function selectedClient() {
+      const clientId = newWashForm.querySelector("[data-client-id]")?.value;
+      const clientSearch = newWashForm.querySelector("[data-client-search]");
+      if (clientId) {
+        return {
+          auto: clientSearch?.dataset.clientChapa || clientSearch?.value || "",
+          client: clientSearch?.dataset.clientNombre || clientSearch?.value || "Sin nombre"
+        };
+      }
+      return {
+        auto: [
+          newWashForm.querySelector("[name='nueva_chapa']")?.value.trim(),
+          newWashForm.querySelector("[name='nuevo_marca_modelo']")?.value.trim()
+        ].filter(Boolean).join(" - "),
+        client: newWashForm.querySelector("[name='nuevo_nombre']")?.value.trim() || "Sin nombre"
+      };
+    }
+
+    function populateNewWashModal() {
+      const client = selectedClient();
+      const personalButtons = Array.from(newWashForm.querySelectorAll("[data-personal-buttons] .is-selected"));
+      const services = Array.from(newWashForm.querySelectorAll("[data-services-list] .service-line")).map((line) => {
+        const select = line.querySelector("[data-service-price]");
+        const option = select?.options[select.selectedIndex];
+        const price = line.querySelector("[data-price-input]")?.value.trim();
+        return option?.value ? `${option.textContent.replace(/\s*\([^)]*\)\s*$/, "").trim()} - ${formatGuarani(price)}` : "";
+      }).filter(Boolean);
+
+      fields.auto.textContent = client.auto || "Sin datos";
+      fields.client.textContent = client.client || "Sin nombre";
+      fields.personal.textContent = personalButtons.map((button) => button.textContent.trim()).join(", ") || "Sin seleccionar";
+      fields.services.textContent = services.join("; ") || "Sin servicios";
+      fields.total.textContent = newWashForm.querySelector("[data-total]")?.textContent.trim() || "Gs. 0";
+    }
+
+    newWashForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      populateNewWashModal();
+      newWashModal.classList.remove("is-hidden");
+      confirmButton.focus();
+    });
+
+    confirmButton.addEventListener("click", () => newWashForm.submit());
+    cancelButton.addEventListener("click", closeNewWashModal);
+    newWashModal.addEventListener("click", (event) => {
+      if (event.target === newWashModal) closeNewWashModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !newWashModal.classList.contains("is-hidden")) closeNewWashModal();
+    });
+  }
+
+  const editWashForm = document.querySelector("[data-edit-wash-form]");
+  const creditModal = document.querySelector("[data-credit-modal]");
+  if (editWashForm && creditModal) {
+    const creditModalTitle = creditModal.querySelector("[data-credit-modal-title]");
+    const creditModalSubtitle = creditModal.querySelector("[data-credit-modal-subtitle]");
+    const creditModalMessage = creditModal.querySelector("[data-credit-modal-message]");
+    const creditModalClient = creditModal.querySelector("[data-credit-client]");
+    const creditModalRuc = creditModal.querySelector("[data-credit-ruc]");
+    const creditModalGroupLabel = creditModal.querySelector("[data-credit-group-label]");
+    const creditModalGroup = creditModal.querySelector("[data-credit-group]");
+    const creditModalTotal = creditModal.querySelector("[data-credit-total]");
+    const creditModalFacts = creditModal.querySelector(".credit-modal-facts");
+    const creditModalMessageBox = creditModal.querySelector("[data-credit-modal-message]");
+    const creditModalActions = creditModal.querySelector("[data-credit-modal-actions]");
+    const creditValidationAlert = creditModal.querySelector("[data-credit-validation-alert]");
+    const creditValidationMessage = creditModal.querySelector("[data-credit-validation-message]");
+    const creditValidationAccept = creditModal.querySelector("[data-credit-validation-accept]");
+    const creditModalConfirm = creditModal.querySelector("[data-credit-modal-confirm]");
+    const creditModalCancel = creditModal.querySelectorAll("[data-credit-modal-cancel]");
+    const state = { step: "credit", submitter: null, allowSubmit: false, validationTarget: null };
+
+    function populateCreditModal() {
+      const clientName = editWashForm.querySelector("[name='cliente_nombre']")?.value.trim();
+      const ruc = editWashForm.querySelector("[name='cliente_ruc']")?.value.trim();
+      const groupSelect = editWashForm.querySelector("[name='fk_idgrupo_cliente']");
+      const selectedGroup = groupSelect?.options[groupSelect.selectedIndex]?.textContent.trim();
+      const total = editWashForm.querySelector("[data-total]")?.textContent.trim();
+      creditModalClient.textContent = clientName || "Sin nombre";
+      creditModalRuc.textContent = ruc || "Sin RUC";
+      creditModalGroup.textContent = groupSelect?.value ? selectedGroup : "Sin grupo";
+      creditModalTotal.textContent = total || "Gs. 0";
+    }
+
+    function openCreditModal(step) {
+      state.step = step;
+      creditValidationAlert.classList.add("is-hidden");
+      creditModalFacts.classList.remove("is-hidden");
+      creditModalMessageBox.classList.remove("is-hidden");
+      creditModalActions.classList.remove("is-hidden");
+      populateCreditModal();
+      const hasGroup = Boolean(editWashForm.querySelector("[name='fk_idgrupo_cliente']")?.value);
+      if (step === "group") {
+        creditModalGroupLabel.textContent = "Nombre / razón social";
+        creditModalTitle.textContent = "Crear grupo de crédito";
+        creditModalSubtitle.textContent = "Se creará un grupo con los datos actuales del cliente.";
+        creditModalMessage.textContent = "¿Querés crear automáticamente el grupo y continuar con el crédito?";
+        creditModalConfirm.textContent = "Crear grupo y continuar";
+        creditModalGroup.textContent = "Nuevo grupo: " + (creditModalClient.textContent || "Sin nombre");
+      } else {
+        creditModalGroupLabel.textContent = "Grupo cliente";
+        creditModalTitle.textContent = "Pasar lavado a crédito";
+        creditModalSubtitle.textContent = "Verifique los datos antes de continuar.";
+        creditModalMessage.textContent = hasGroup
+          ? "El lavado quedará asociado a un crédito por grupo."
+          : "El lavado quedará asociado a un crédito por grupo y luego podrá crear el grupo automáticamente.";
+        creditModalConfirm.textContent = "Continuar";
+      }
+      creditModal.classList.remove("is-hidden");
+      creditModalConfirm.focus();
+    }
+
+    function showValidationAlert(message, target) {
+      state.validationTarget = target;
+      creditModalTitle.textContent = "Datos incompletos";
+      creditModalSubtitle.textContent = "Complete el dato indicado para continuar.";
+      creditModalFacts.classList.add("is-hidden");
+      creditModalMessageBox.classList.add("is-hidden");
+      creditModalActions.classList.add("is-hidden");
+      creditValidationMessage.textContent = message;
+      creditValidationAlert.classList.remove("is-hidden");
+      creditModal.classList.remove("is-hidden");
+      creditValidationAccept.focus();
+    }
+
+    function validateCreditFields() {
+      const rucInput = editWashForm.querySelector("[name='cliente_ruc']");
+      const nombreInput = editWashForm.querySelector("[name='cliente_nombre']");
+      const groupSelect = editWashForm.querySelector("[name='fk_idgrupo_cliente']");
+      const validationMessage = "Para pasar a crédito, el RUC y el nombre del cliente deben tener al menos 3 caracteres.";
+      if ((rucInput?.value.trim().length || 0) < 3) return { message: validationMessage, target: rucInput };
+      if ((nombreInput?.value.trim().length || 0) < 3) return { message: validationMessage, target: nombreInput };
+      if (groupSelect && !groupSelect.value) {
+        return { message: "Para pasar a crédito, el cliente debe estar asociado a un grupo cliente.", target: groupSelect };
+      }
+      return null;
+    }
+
+    function closeCreditModal() {
+      creditModal.classList.add("is-hidden");
+      state.step = "credit";
+      state.submitter = null;
+      state.validationTarget = null;
+    }
+
+    function submitCreditForm(createGroup) {
+      creditModal.classList.add("is-hidden");
+      if (createGroup) {
+        editWashForm.querySelectorAll("[data-auto-group-flag]").forEach((field) => field.remove());
+        const field = document.createElement("input");
+        field.type = "hidden";
+        field.name = "crear_grupo_automatico";
+        field.value = "1";
+        field.dataset.autoGroupFlag = "true";
+        editWashForm.appendChild(field);
+      }
+      state.allowSubmit = true;
+      editWashForm.requestSubmit(state.submitter);
+    }
+
+    editWashForm.addEventListener("submit", (event) => {
+      if (event.submitter?.dataset.passCredit === undefined) return;
+      if (state.allowSubmit) {
+        state.allowSubmit = false;
+        return;
+      }
+      event.preventDefault();
+      state.submitter = event.submitter;
+      const validation = validateCreditFields();
+      if (validation) {
+        showValidationAlert(validation.message, validation.target);
+        return;
+      }
+      openCreditModal("credit");
+    });
+
+    creditValidationAccept.addEventListener("click", () => {
+      const target = state.validationTarget;
+      closeCreditModal();
+      if (target) {
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+
+    creditModalConfirm.addEventListener("click", () => {
+      if (state.step === "credit") {
+        const groupSelect = editWashForm.querySelector("[name='fk_idgrupo_cliente']");
+        if (groupSelect && !groupSelect.value) {
+          openCreditModal("group");
+          return;
+        }
+        submitCreditForm(false);
+        return;
+      }
+      submitCreditForm(true);
+    });
+    creditModalCancel.forEach((button) => button.addEventListener("click", closeCreditModal));
+    creditModal.addEventListener("click", (event) => {
+      if (event.target === creditModal) closeCreditModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !creditModal.classList.contains("is-hidden")) closeCreditModal();
+    });
+  }
+
+  const paymentModal = document.querySelector("[data-payment-modal]");
+  if (paymentModal) {
+    let pendingPaymentForm = null;
+    const fields = {
+      lavado: paymentModal.querySelector("[data-modal-lavado]"),
+      auto: paymentModal.querySelector("[data-modal-auto]"),
+      personal: paymentModal.querySelector("[data-modal-personal]"),
+      total: paymentModal.querySelector("[data-modal-total]"),
+      pagoActual: paymentModal.querySelector("[data-modal-pago-actual]"),
+      pagoNuevo: paymentModal.querySelector("[data-modal-pago-nuevo]")
+    };
+    const yesButton = paymentModal.querySelector("[data-payment-confirm-yes]");
+    const noButton = paymentModal.querySelector("[data-payment-confirm-no]");
+
+    function closePaymentModal() {
+      paymentModal.classList.add("is-hidden");
+      pendingPaymentForm = null;
+    }
+
+    document.querySelectorAll("[data-payment-confirm]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        pendingPaymentForm = button.closest("form");
+        fields.lavado.textContent = button.dataset.lavadoId || "";
+        fields.auto.textContent = button.dataset.auto || "";
+        fields.personal.textContent = button.dataset.personal || "";
+        fields.total.textContent = button.dataset.total || "";
+        fields.pagoActual.textContent = button.dataset.pagoActual || "";
+        fields.pagoNuevo.textContent = button.dataset.pagoNuevo || "";
+        paymentModal.classList.remove("is-hidden");
+        yesButton.focus();
+      });
+    });
+
+    yesButton.addEventListener("click", () => {
+      if (pendingPaymentForm) pendingPaymentForm.submit();
+    });
+
+    noButton.addEventListener("click", closePaymentModal);
+    paymentModal.addEventListener("click", (event) => {
+      if (event.target === paymentModal) closePaymentModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !paymentModal.classList.contains("is-hidden")) closePaymentModal();
+    });
+  }
+
+  const anularForm = document.querySelector("[data-anular-form]");
+  const anularModal = document.querySelector("[data-anular-modal]");
+  if (anularForm && anularModal) {
+    const anularConfirm = anularModal.querySelector("[data-anular-modal-confirm]");
+    const anularCancel = anularModal.querySelectorAll("[data-anular-modal-cancel]");
+    let pendingAnularForm = null;
+
+    function closeAnularModal() {
+      anularModal.classList.add("is-hidden");
+      pendingAnularForm = null;
+    }
+
+    anularForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      pendingAnularForm = anularForm;
+      anularModal.classList.remove("is-hidden");
+      anularConfirm.focus();
+    });
+
+    anularConfirm.addEventListener("click", () => {
+      if (pendingAnularForm) pendingAnularForm.submit();
+    });
+    anularCancel.forEach((button) => button.addEventListener("click", closeAnularModal));
+    anularModal.addEventListener("click", (event) => {
+      if (event.target === anularModal) closeAnularModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !anularModal.classList.contains("is-hidden")) closeAnularModal();
+    });
+  }
+
+  const crudModal = document.querySelector("[data-crud-modal]");
+  const openCrudModal = document.querySelector("[data-open-crud-modal]");
+  if (crudModal) {
+    const crudForm = crudModal.querySelector("[data-crud-modal-form]");
+    const crudTitle = crudModal.querySelector("[data-crud-modal-title]");
+
+    function closeCrudModal() {
+      crudModal.classList.add("is-hidden");
+      if (window.location.search.includes("edit=")) {
+        window.location.href = window.location.pathname;
+      }
+    }
+
+    function openNewCrudModal() {
+      if (!crudForm) return;
+      crudForm.action = crudForm.dataset.createAction || window.location.pathname;
+      if (crudTitle) crudTitle.textContent = crudForm.dataset.newTitle || "Nuevo registro";
+      crudForm.querySelectorAll("input, select").forEach((field) => {
+        if (field.type === "checkbox") {
+          field.checked = true;
+        } else if (field.type === "file") {
+          field.value = "";
+        } else {
+          field.value = field.dataset.defaultValue || "";
+        }
+      });
+      crudForm.querySelectorAll("[data-image-preview]").forEach((preview) => {
+        preview.removeAttribute("src");
+        preview.classList.add("is-hidden");
+      });
+      crudModal.classList.remove("is-hidden");
+      const firstInput = crudForm.querySelector("input:not([type='checkbox']), select");
+      if (firstInput) firstInput.focus();
+    }
+
+    if (openCrudModal) {
+      openCrudModal.addEventListener("click", openNewCrudModal);
+    }
+    crudModal.querySelectorAll("[data-close-crud-modal]").forEach((button) => {
+      button.addEventListener("click", closeCrudModal);
+    });
+    crudModal.addEventListener("click", (event) => {
+      if (event.target === crudModal) closeCrudModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !crudModal.classList.contains("is-hidden")) closeCrudModal();
+    });
+  }
+
+  document.querySelectorAll("form[data-confirm]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      if (!window.confirm(form.dataset.confirm)) event.preventDefault();
+    });
+  });
+})();
