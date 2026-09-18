@@ -56,10 +56,17 @@
     <div class="grid one">
       <label>
         Buscar cliente existente
-        <input type="search" data-client-search name="cliente_busqueda" value="<%= formData.cliente_busqueda || '' %>" placeholder="Chapa, marca/modelo o nombre">
-      </label>
+      <input
+        type="search"
+        data-client-search
+        name="cliente_busqueda"
+        value="<%= formData.cliente_busqueda || '' %>"
+        placeholder="Chapa, marca/modelo o nombre"
+        <%= clientePrefill ? `data-client-chapa="${clientePrefill.chapa || ''}" data-client-nombre="${clientePrefill.nombre || clientePrefill.marca_modelo || ''}"` : '' %>>
+    </label>
       <div class="client-search-results is-hidden" data-client-results></div>
       <input type="hidden" name="fk_idcliente" value="<%= formData.fk_idcliente || '' %>" data-client-id>
+      <input type="hidden" name="reserva_id" value="<%= formData.reserva_id || '' %>">
       <div class="choice-group">
         <span class="choice-label">Personal</span>
         <% const selectedPersonalIds = Array.isArray(formData.fk_idpersonal) ? formData.fk_idpersonal.map(String) : (formData.fk_idpersonal ? [String(formData.fk_idpersonal)] : []); %>

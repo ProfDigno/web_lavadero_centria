@@ -34,7 +34,7 @@ begin
     set fk_idusuario_roll = ur.idusuario_roll
     from usuario_roll_legacy legacy
     join usuario_roll ur on ur.roll = legacy.roll
-    where legacy.usuario_id = u.idusuario;
+    where legacy.fk_idusuario = u.idusuario;
 
     alter table usuarios
       add constraint usuarios_usuario_roll_fk
@@ -58,7 +58,7 @@ begin
            bool_and(legacy.activo),
            min(legacy.creado_por)
     from usuario_roll_item_legacy legacy
-    join usuario_roll_legacy legacy_roll on legacy_roll.id = legacy.fk_idusuario_roll
+    join usuario_roll_legacy legacy_roll on legacy_roll.idusuario_roll = legacy.fk_idusuario_roll
     join usuario_roll ur on ur.roll = legacy_roll.roll
     group by ur.idusuario_roll, legacy.codigo_item;
 
@@ -82,7 +82,7 @@ begin
            bool_and(legacy.activo),
            min(legacy.creado_por)
     from usuario_roll_evento_legacy legacy
-    join usuario_roll_legacy legacy_roll on legacy_roll.id = legacy.fk_idusuario_roll
+    join usuario_roll_legacy legacy_roll on legacy_roll.idusuario_roll = legacy.fk_idusuario_roll
     join usuario_roll ur on ur.roll = legacy_roll.roll
     group by ur.idusuario_roll, legacy.codigo_evento;
 

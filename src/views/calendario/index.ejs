@@ -1,0 +1,106 @@
+<%- include('../partials/header') %>
+<div class="page-head calendar-page-head">
+  <div>
+    <h1>Calendario</h1>
+    <p>Agende reservas por cliente, servicio y horario.</p>
+  </div>
+  <div class="calendar-month-actions">
+    <button type="button" class="button" data-calendar-create-open>Nueva reserva</button>
+    <a class="button secondary" href="/calendario?mes=<%= (() => { const d = new Date(`${month}-01T00:00:00`); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })() %>">Anterior</a>
+    <a class="button secondary" href="/calendario?mes=<%= today.slice(0, 7) %>">Hoy</a>
+    <a class="button secondary" href="/calendario?mes=<%= (() => { const d = new Date(`${month}-01T00:00:00`); d.setMonth(d.getMonth() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })() %>">Siguiente</a>
+  </div>
+</div>
+
+<section class="panel calendar-panel" data-calendar-root data-current-month="<%= month %>">
+  <div class="calendar-title-row">
+    <h2><%= monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1) %></h2>
+    <span class="muted">Seleccione un día para ver sus reservas.</span>
+  </div>
+  <div class="calendar-weekdays" aria-hidden="true">
+    <span>Dom</span><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span>
+  </div>
+  <div class="calendar-grid">
+    <% calendarDays.forEach((day) => { %>
+      <button type="button" class="calendar-day <%= day.inMonth ? '' : 'is-outside' %> <%= day.today ? 'is-today' : '' %>" data-calendar-day="<%= day.iso %>">
+        <span class="calendar-day-number"><%= day.day %></span>
+        <% if (day.summary && Number(day.summary.reservas_activas || 0) > 0) { %>
+          <span class="calendar-day-summary">
+            <span class="calendar-day-count"><%= day.summary.reservas_activas %> reserva<%= Number(day.summary.reservas_activas) === 1 ? '' : 's' %></span>
+            <span class="calendar-day-amount"><%= formatMoney(day.summary.monto_activo) %></span>
+          </span>
+        <% } else if (day.summary && Number(day.summary.reservas_total || 0) > 0) { %>
+          <span class="calendar-day-summary is-muted">
+            <span class="calendar-day-count"><%= day.summary.reservas_total %> cancelada<%= Number(day.summary.reservas_total) === 1 ? '' : 's' %></span>
+          </span>
+        <% } %>
+      </button>
+    <% }) %>
+  </div>
+</section>
+
+<div class="modal-backdrop is-hidden" data-calendar-modal>
+  <div class="modal-panel calendar-reservations-modal" role="dialog" aria-modal="true" aria-labelledby="calendar-modal-title">
+    <div class="calendar-modal-head">
+      <div>
+        <h2 id="calendar-modal-title">Reservas del día</h2>
+        <p class="muted" data-calendar-modal-date></p>
+      </div>
+      <button type="button" class="icon secondary" data-calendar-close aria-label="Cerrar">x</button>
+    </div>
+    <div class="calendar-reservation-list" data-calendar-reservation-list></div>
+  </div>
+</div>
+
+<div class="modal-backdrop is-hidden" data-calendar-create-modal aria-hidden="true">
+  <div class="modal-panel calendar-create-modal" role="dialog" aria-modal="true" aria-labelledby="calendar-create-modal-title">
+    <div class="calendar-modal-head">
+      <div>
+        <h2 id="calendar-create-modal-title">Nueva reserva</h2>
+        <p class="muted">El monto se toma de los precios actuales y queda guardado en la reserva.</p>
+      </div>
+      <button type="button" class="icon secondary" data-calendar-create-close aria-label="Cerrar">x</button>
+    </div>
+    <form method="post" action="/calendario/reservas" class="calendar-create-form">
+      <label class="calendar-client-select">
+        Cliente
+        <input type="search" class="calendar-client-search" placeholder="Buscar por nombre, chapa o teléfono" data-calendar-client-search autocomplete="off">
+        <select name="fk_idcliente" required data-calendar-client-select>
+          <option value="">Seleccione un cliente</option>
+          <% clients.forEach((client) => { %>
+            <option value="<%= client.id %>"><%= [client.nombre, client.chapa, client.marca_modelo].filter(Boolean).join(' - ') %><%= client.telefono ? ` (${client.telefono})` : '' %></option>
+          <% }) %>
+        </select>
+      </label>
+      <div class="calendar-datetime-fields">
+        <label>
+          Fecha
+          <input type="date" name="fecha_reserva" value="<%= today %>" required>
+        </label>
+        <label>
+          Hora
+          <input type="time" name="hora_reserva" required>
+        </label>
+      </div>
+      <label class="calendar-service-select">
+        Servicios
+        <select name="fk_idservicio" multiple required size="5" data-calendar-service-select>
+          <% services.forEach((service) => { %>
+            <option value="<%= service.id %>" data-price="<%= service.precio_base %>"><%= service.grupo_nombre ? `${service.grupo_nombre} - ` : '' %><%= service.nombre %> — <%= formatMoney(service.precio_base) %></option>
+          <% }) %>
+        </select>
+        <small>Use Ctrl/Cmd para seleccionar más de un servicio.</small>
+      </label>
+      <div class="calendar-create-total">
+        <div>
+          <span>Monto de reserva</span>
+          <strong data-calendar-total>Gs. 0</strong>
+        </div>
+        <button type="submit">Crear reserva</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/calendario.js?v=20260917-4"></script>
+<%- include('../partials/footer') %>

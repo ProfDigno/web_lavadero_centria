@@ -264,6 +264,16 @@ function requireEvent(code) {
   return requirePermission("eventos", code);
 }
 
+function requireCalendarAccess(req, res, next) {
+  if (req.authorization?.roll === "ADMINISTRADOR" || req.authorization?.roll === "ENCARGADO") {
+    return next();
+  }
+  return res.status(403).render("error", {
+    title: "Acceso bloqueado",
+    message: "El Calendario está disponible únicamente para administradores y encargados."
+  });
+}
+
 function requireCajaCierreAccess(req, res, next) {
   if (req.cajaBloqueadaPorFecha) return next();
   return requireEvent("cierre_caja-ocultar")(req, res, next);
@@ -483,6 +493,60 @@ function todayIso() {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${now.getFullYear()}-${month}-${day}`;
+}
+
+function isIsoDate(value) {
+  const text = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const date = new Date(`${text}T00:00:00`);
+  return !Number.isNaN(date.getTime()) && formatDateInput(date) === text;
+}
+
+function normalizeCalendarMonth(value) {
+  const text = String(value || "").trim();
+  if (!/^\d{4}-\d{2}$/.test(text)) return todayIso().slice(0, 7);
+  const date = new Date(`${text}-01T00:00:00`);
+  return Number.isNaN(date.getTime()) ? todayIso().slice(0, 7) : text;
+}
+
+function calendarMonthRange(month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const first = new Date(year, monthNumber - 1, 1);
+  const last = new Date(year, monthNumber, 0);
+  const gridStart = new Date(year, monthNumber - 1, 1 - first.getDay());
+  const gridEnd = new Date(year, monthNumber - 1, last.getDate() + (6 - last.getDay()));
+  const toIso = (date) => `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
+  const days = [];
+  for (let cursor = new Date(gridStart); cursor <= gridEnd; cursor.setDate(cursor.getDate() + 1)) {
+    days.push({
+      iso: toIso(cursor),
+      day: cursor.getDate(),
+      inMonth: cursor.getMonth() === monthNumber - 1,
+      today: toIso(cursor) === todayIso()
+    });
+  }
+  return { first: toIso(gridStart), last: toIso(gridEnd), days };
+}
+
+function normalizeParaguayMobile(value) {
+  let digits = String(value || "").replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("595")) digits = digits.slice(3);
+  if (digits.startsWith("0")) digits = digits.slice(1);
+  if (!/^9\d{8}$/.test(digits)) return null;
+  return `595${digits}`;
+}
+
+function calendarWhatsAppMessage(reservation) {
+  const date = formatDate(reservation.fecha_reserva);
+  const time = formatReservationTime(reservation.hora_reserva);
+  const services = reservation.servicios || "Servicios reservados";
+  return `Hola ${reservation.cliente_nombre || ""}, te recordamos tu reserva en LAVADERO CENTRIA para el ${date} a las ${time}. Servicios: ${services}. Monto estimado: ${formatMoney(reservation.monto)}. ¡Te esperamos!`;
+}
+
+function formatReservationTime(value) {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
+  return match ? `${padDatePart(match[1])}:${match[2]}` : "";
 }
 
 function safeDownloadName(value) {
@@ -2536,13 +2600,226 @@ app.get("/analisis-clientes", requireAuth, requireEvent("AnalisisCliente-ocultar
   }
 });
 
+app.get("/calendario", requireAuth, requireCalendarAccess, async (req, res, next) => {
+  try {
+    const month = normalizeCalendarMonth(req.query.mes);
+    const range = calendarMonthRange(month);
+    const [summary, clients, services] = await Promise.all([
+      query(
+        `select fecha_reserva,
+                count(*) filter (where estado <> 'CANCELADO')::int as reservas_activas,
+                coalesce(sum(monto) filter (where estado <> 'CANCELADO'), 0) as monto_activo,
+                count(*)::int as reservas_total
+         from reservas_lavado
+         where fecha_reserva between $1 and $2
+         group by fecha_reserva`,
+        [range.first, range.last]
+      ),
+      query(
+        `select idcliente as id, chapa, marca_modelo, nombre, telefono
+         from clientes
+         where activo = true
+         order by coalesce(nullif(trim(nombre), ''), marca_modelo), chapa`
+      ),
+      query(
+        `select s.idservicio as id, s.nombre, s.precio_base, sg.nombre as grupo_nombre
+         from servicios s
+         left join servicio_grupo sg on sg.idservicio_grupo = s.fk_idservicio_grupo
+         where s.activo = true
+         order by sg.nombre nulls last, s.nombre`
+      )
+    ]);
+
+    const summaryByDate = new Map(summary.rows.map((row) => [formatDateInput(row.fecha_reserva), row]));
+    const monthDate = new Date(`${month}-01T00:00:00`);
+    res.render("calendario/index", {
+      title: "Calendario",
+      month,
+      monthLabel: new Intl.DateTimeFormat("es-PY", { month: "long", year: "numeric" }).format(monthDate),
+      calendarDays: range.days.map((day) => ({ ...day, summary: summaryByDate.get(day.iso) || null })),
+      clients: clients.rows,
+      services: services.rows,
+      today: todayIso()
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/calendario/reservas", requireAuth, requireCalendarAccess, async (req, res, next) => {
+  try {
+    const fecha = String(req.query.fecha || "").trim();
+    if (!isIsoDate(fecha)) return res.status(400).json({ message: "Fecha inválida." });
+    const result = await query(
+      `select r.idreserva_lavado as id,
+              r.fecha_reserva,
+              r.hora_reserva,
+              r.estado,
+              r.monto,
+              r.fk_idlavado,
+              c.idcliente as cliente_id,
+              c.nombre as cliente_nombre,
+              c.chapa,
+              c.marca_modelo,
+              c.telefono,
+              coalesce(string_agg(s.nombre, ', ' order by rls.idreserva_lavado_servicio), '') as servicios
+       from reservas_lavado r
+       join clientes c on c.idcliente = r.fk_idcliente
+       left join reserva_lavado_servicios rls on rls.fk_idreserva_lavado = r.idreserva_lavado
+       left join servicios s on s.idservicio = rls.fk_idservicio
+       where r.fecha_reserva = $1
+       group by r.idreserva_lavado, c.idcliente, c.nombre, c.chapa, c.marca_modelo, c.telefono
+       order by r.hora_reserva, r.idreserva_lavado`,
+      [fecha]
+    );
+    res.json({
+      fecha,
+      reservas: result.rows.map((reservation) => ({
+        ...reservation,
+        hora: formatReservationTime(reservation.hora_reserva),
+        fecha_label: formatDate(reservation.fecha_reserva),
+        monto: Number(reservation.monto || 0),
+        cliente_label: [reservation.nombre, reservation.chapa, reservation.marca_modelo].filter(Boolean).join(" - ")
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/calendario/reservas", requireAuth, requireCalendarAccess, async (req, res) => {
+  try {
+    const clienteId = Number(req.body.fk_idcliente || 0);
+    const fecha = String(req.body.fecha_reserva || "").trim();
+    const hora = String(req.body.hora_reserva || "").trim();
+    const servicioIds = [...new Set(normalizeArray(req.body.fk_idservicio).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+    if (!clienteId || !isIsoDate(fecha) || !/^\d{2}:\d{2}$/.test(hora) || !servicioIds.length) {
+      setFlash(req, "error", "Seleccione un cliente, una fecha, una hora y al menos un servicio.");
+      return res.redirect(`/calendario?mes=${encodeURIComponent(fecha.slice(0, 7) || normalizeCalendarMonth())}`);
+    }
+
+    const reservationId = await withTransaction(async (client) => {
+      const clientResult = await client.query(`select idcliente from clientes where idcliente = $1 and activo = true`, [clienteId]);
+      if (!clientResult.rows[0]) throw new Error("Cliente no encontrado o inactivo.");
+      const serviceResult = await client.query(
+        `select idservicio, precio_base from servicios where idservicio = any($1::int[]) and activo = true order by array_position($1::int[], idservicio)`,
+        [servicioIds]
+      );
+      if (serviceResult.rows.length !== servicioIds.length) throw new Error("Uno de los servicios no está disponible.");
+      const total = serviceResult.rows.reduce((sum, service) => sum + Number(service.precio_base || 0), 0);
+      const created = await client.query(
+        `insert into reservas_lavado (fk_idcliente, fecha_reserva, hora_reserva, estado, monto, creado_por)
+         values ($1, $2, $3, 'PENDIENTE', $4, $5)
+         returning idreserva_lavado`,
+        [clienteId, fecha, hora, total, currentUser(req)]
+      );
+      for (const service of serviceResult.rows) {
+        await client.query(
+          `insert into reserva_lavado_servicios (fk_idreserva_lavado, fk_idservicio, precio, creado_por)
+           values ($1, $2, $3, $4)`,
+          [created.rows[0].idreserva_lavado, service.idservicio, service.precio_base, currentUser(req)]
+        );
+      }
+      return created.rows[0].idreserva_lavado;
+    });
+    setFlash(req, "success", `Reserva #${reservationId} creada correctamente.`);
+  } catch (error) {
+    setFlash(req, "error", error.code === "23505" ? "Ese cliente ya tiene una reserva activa en esa fecha y hora." : userErrorMessage(error));
+  }
+  res.redirect(`/calendario?mes=${encodeURIComponent(String(req.body.fecha_reserva || "").slice(0, 7) || normalizeCalendarMonth())}`);
+});
+
+app.post("/calendario/reservas/:id/notificar", requireAuth, requireCalendarAccess, async (req, res) => {
+  try {
+    const reservationResult = await query(
+      `select r.idreserva_lavado as id, r.fecha_reserva, r.hora_reserva, r.estado, r.monto,
+              c.idcliente, c.nombre as cliente_nombre, c.telefono,
+              coalesce(string_agg(s.nombre, ', ' order by rls.idreserva_lavado_servicio), '') as servicios
+       from reservas_lavado r
+       join clientes c on c.idcliente = r.fk_idcliente
+       left join reserva_lavado_servicios rls on rls.fk_idreserva_lavado = r.idreserva_lavado
+       left join servicios s on s.idservicio = rls.fk_idservicio
+       where r.idreserva_lavado = $1
+       group by r.idreserva_lavado, c.idcliente, c.nombre, c.telefono`,
+      [req.params.id]
+    );
+    const reservation = reservationResult.rows[0];
+    if (!reservation) return res.status(404).json({ message: "Reserva no encontrada." });
+    if (reservation.estado === "CANCELADO" || reservation.estado === "CARGADO") {
+      return res.status(409).json({ message: "Esta reserva ya no puede ser notificada." });
+    }
+    const phone = normalizeParaguayMobile(reservation.telefono);
+    if (!phone) return res.status(422).json({ message: "El cliente no tiene un número móvil paraguayo válido." });
+    const message = calendarWhatsAppMessage(reservation);
+    await withTransaction(async (client) => {
+      await client.query(`update clientes set telefono = $1 where idcliente = $2`, [`+${phone}`, reservation.idcliente]);
+      await client.query(
+        `update reservas_lavado set estado = 'NOTIFICADO', notificado_en = now() where idreserva_lavado = $1`,
+        [reservation.id]
+      );
+    });
+    res.json({ phone, message });
+  } catch (error) {
+    res.status(500).json({ message: userErrorMessage(error) });
+  }
+});
+
+app.post("/calendario/reservas/:id/cancelar", requireAuth, requireCalendarAccess, async (req, res) => {
+  try {
+    const result = await query(
+      `update reservas_lavado
+       set estado = 'CANCELADO', cancelado_en = now(), cancelado_por = $2
+       where idreserva_lavado = $1 and estado not in ('CANCELADO', 'CARGADO')
+       returning idreserva_lavado`,
+      [req.params.id, currentUser(req)]
+    );
+    if (!result.rows[0]) return res.status(409).json({ message: "La reserva ya fue cancelada o cargada." });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: userErrorMessage(error) });
+  }
+});
+
 app.get("/lavados", requireAuth, async (req, res, next) => {
   try {
     const fecha = req.query.fecha || todayIso();
     const searchTerm = String(req.query.q || "").trim();
     const searchPattern = searchTerm ? `%${searchTerm}%` : "";
-    const formData = req.session.lavadoForm || {};
+    let formData = req.session.lavadoForm || {};
     delete req.session.lavadoForm;
+    let clientePrefill = null;
+    if (req.query.reserva_id) {
+      const reservation = await query(
+        `select r.idreserva_lavado as id, r.fecha_reserva, r.hora_reserva, r.estado,
+                c.idcliente, c.chapa, c.marca_modelo, c.nombre, c.telefono,
+                coalesce(array_agg(rls.fk_idservicio order by rls.idreserva_lavado_servicio) filter (where rls.fk_idservicio is not null), '{}') as servicio_ids,
+                coalesce(array_agg(rls.precio order by rls.idreserva_lavado_servicio) filter (where rls.fk_idservicio is not null), '{}') as precios
+         from reservas_lavado r
+         join clientes c on c.idcliente = r.fk_idcliente
+         left join reserva_lavado_servicios rls on rls.fk_idreserva_lavado = r.idreserva_lavado
+         where r.idreserva_lavado = $1
+         group by r.idreserva_lavado, c.idcliente, c.chapa, c.marca_modelo, c.nombre, c.telefono`,
+        [req.query.reserva_id]
+      );
+      const item = reservation.rows[0];
+      if (!item) {
+        setFlash(req, "error", "Reserva no encontrada.");
+        return res.redirect("/calendario");
+      }
+      if (["CANCELADO", "CARGADO"].includes(item.estado)) {
+        setFlash(req, "error", "La reserva ya fue cancelada o cargada.");
+        return res.redirect("/calendario");
+      }
+      formData = {
+        ...formData,
+        reserva_id: item.id,
+        fk_idcliente: item.idcliente,
+        cliente_busqueda: [item.chapa, item.marca_modelo, item.nombre].filter(Boolean).join(" - "),
+        fk_idservicio: item.servicio_ids,
+        precio: item.precios
+      };
+      clientePrefill = item;
+    }
     const data = await getActiveMasterData();
     const lavados = await query(
       `select l.*, c.chapa, c.marca_modelo,
@@ -2561,7 +2838,7 @@ app.get("/lavados", requireAuth, async (req, res, next) => {
        limit 100`,
       [fecha, searchPattern]
     );
-    res.render("lavados/index", { title: "Lavados", ...data, lavados: lavados.rows, formData, fecha, searchTerm });
+    res.render("lavados/index", { title: "Lavados", ...data, lavados: lavados.rows, formData, clientePrefill, fecha, searchTerm });
   } catch (error) {
     next(error);
   }
@@ -2996,8 +3273,9 @@ app.get("/facturas/:id/pdf", requireAuth, requireEvent("factura-ocultar"), async
 
 app.post("/lavados", requireAuth, async (req, res, next) => {
   try {
-    const servicioIds = normalizeArray(req.body.fk_idservicio).map(Number).filter(Boolean);
-    const precios = normalizeArray(req.body.precio);
+    let servicioIds = normalizeArray(req.body.fk_idservicio).map(Number).filter(Boolean);
+    let precios = normalizeArray(req.body.precio);
+    const reservaId = Number(req.body.reserva_id || 0) || null;
     if (!servicioIds.length) {
       return redirectLavadosWithForm(req, res, "Seleccione al menos un servicio.");
     }
@@ -3007,6 +3285,33 @@ app.post("/lavados", requireAuth, async (req, res, next) => {
     const creadoPor = currentUser(req);
     const lavadoId = await withTransaction(async (client) => {
       let clienteId = Number(req.body.fk_idcliente || 0);
+      let reservation = null;
+      if (reservaId) {
+        const reservationResult = await client.query(
+          `select r.*, c.idcliente
+           from reservas_lavado r
+           join clientes c on c.idcliente = r.fk_idcliente
+           where r.idreserva_lavado = $1
+           for update`,
+          [reservaId]
+        );
+        reservation = reservationResult.rows[0];
+        if (!reservation) throw new Error("Reserva no encontrada.");
+        if (["CANCELADO", "CARGADO"].includes(reservation.estado)) {
+          throw new Error("La reserva ya fue cancelada o cargada.");
+        }
+        const reservedServices = await client.query(
+          `select fk_idservicio, precio
+           from reserva_lavado_servicios
+           where fk_idreserva_lavado = $1
+           order by idreserva_lavado_servicio`,
+          [reservaId]
+        );
+        if (!reservedServices.rows.length) throw new Error("La reserva no tiene servicios.");
+        clienteId = reservation.fk_idcliente;
+        servicioIds = reservedServices.rows.map((item) => Number(item.fk_idservicio));
+        precios = reservedServices.rows.map((item) => String(item.precio));
+      }
       if (!clienteId) {
         const nuevaChapa = String(req.body.nueva_chapa || "").trim().toUpperCase();
         const nuevoMarcaModelo = String(req.body.nuevo_marca_modelo || "").trim().toUpperCase();
@@ -3041,7 +3346,12 @@ app.post("/lavados", requireAuth, async (req, res, next) => {
       );
       if (!cliente.rows[0]) throw new Error("Cliente no encontrado.");
 
-      const fechaLavadoResult = await client.query(`select current_date::date as fecha`);
+      const fechaLavado = reservation
+        ? `${formatDateInput(reservation.fecha_reserva)} ${formatReservationTime(reservation.hora_reserva)}:00`
+        : null;
+      const fechaLavadoResult = reservation
+        ? { rows: [{ fecha: reservation.fecha_reserva }] }
+        : await client.query(`select current_date::date as fecha`);
       await ensureNoDuplicateLavado(client, clienteId, fechaLavadoResult.rows[0].fecha);
 
       const condicion = cliente.rows[0].es_credito ? "CREDITO" : "CONTADO";
@@ -3061,12 +3371,19 @@ app.post("/lavados", requireAuth, async (req, res, next) => {
       const comision = Math.round(total * 40) / 100;
       const saldo = Math.round(total * 60) / 100;
 
+      const lavadoColumns = [
+        ...(fechaLavado ? ["fecha_creado"] : []),
+        "fk_idcliente", "condicion", "fk_idforma_pago", "estado", "total",
+        "comision_personal", "saldo_lavadero", "fk_idgrupo_cliente_creditos", "creado_por"
+      ];
+      const lavadoValues = [
+        ...(fechaLavado ? [fechaLavado] : []),
+        clienteId, condicion, forma.rows[0].id, estadoPorFormaPago(formaDefault), total, comision, saldo, grupoCreditoId, creadoPor
+      ];
+      const placeholders = lavadoValues.map((_, index) => `$${index + 1}`).join(", ");
       const lavadoResult = await client.query(
-        `insert into lavados
-           (fk_idcliente, condicion, fk_idforma_pago, estado, total, comision_personal, saldo_lavadero, fk_idgrupo_cliente_creditos, creado_por)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         returning *`,
-        [clienteId, condicion, forma.rows[0].id, estadoPorFormaPago(formaDefault), total, comision, saldo, grupoCreditoId, creadoPor]
+        `insert into lavados (${lavadoColumns.join(", ")}) values (${placeholders}) returning *`,
+        lavadoValues
       );
 
       const lavado = lavadoResult.rows[0];
@@ -3090,6 +3407,14 @@ app.post("/lavados", requireAuth, async (req, res, next) => {
         );
       }
       await applyCommission(client, lavado, 1, creadoPor);
+      if (reservation) {
+        await client.query(
+          `update reservas_lavado
+           set estado = 'CARGADO', fk_idlavado = $2, cargado_en = now()
+           where idreserva_lavado = $1`,
+          [reservaId, lavado.id]
+        );
+      }
       return lavado.id;
     });
 
