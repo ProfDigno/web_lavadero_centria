@@ -47,7 +47,6 @@
     <% const showFactura = canEvent('factura-ocultar'); %>
     <% const showFacturaLibre = canEvent('factura_libre-ocultar'); %>
     <% const showFacturaSend = canEvent('config_facturasend-ocultar'); %>
-    <% const showGoogleCalendar = canEvent('google_calendar-ocultar') && ['ADMINISTRADOR', 'ENCARGADO'].includes(userRoll); %>
     <% const showTelegramConfig = canEvent('telegram_config-ocultar') && userRoll === 'ADMINISTRADOR'; %>
     <% const showProductoCategoria = canEvent('producto_categoria-ocultar'); %>
     <% const showProducto = canEvent('producto-ocultar'); %>
@@ -179,9 +178,6 @@
         <div class="nav-submenu">
           <% if (showPagos) { %>
             <a href="/formas-pago"><span class="nav-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg></span>Pagos</a>
-          <% } %>
-          <% if (showGoogleCalendar) { %>
-            <a href="/google-calendar">Google Calendar</a>
           <% } %>
           <% if (showTelegramConfig) { %>
             <a href="/telegram/config">Telegram</a>

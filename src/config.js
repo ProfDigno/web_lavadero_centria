@@ -26,14 +26,6 @@ module.exports = {
   appEnv,
   port: Number(process.env.PORT || 3011),
   sessionSecret: process.env.SESSION_SECRET || "lavadero-local-secret",
-  googleCalendar: {
-    clientId: process.env.GOOGLE_CLIENT_ID || "",
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
-    redirectUri: process.env.GOOGLE_REDIRECT_URI || `http://localhost:${Number(process.env.PORT || 3011)}/google-calendar/oauth2callback`,
-    timezone: process.env.GOOGLE_CALENDAR_TIMEZONE || "America/Asuncion",
-    calendarName: process.env.GOOGLE_CALENDAR_NAME || "Lavadero",
-    reminderMinutes: Number(process.env.GOOGLE_CALENDAR_REMINDER_MINUTES || 60)
-  },
   db: {
     host: process.env.DB_HOST || "localhost",
     port: Number(process.env.DB_PORT || 5432),
