@@ -17,8 +17,9 @@ function localTelegramToken() {
   }
 }
 
-const telegramToken = localTelegramToken() || (isLocal ? "" : process.env.TELEGRAM_BOT_TOKEN || "");
+const telegramToken = localTelegramToken() || process.env.TELEGRAM_BOT_TOKEN || "";
 const telegramReminderMinutes = Number(process.env.TELEGRAM_RESERVATION_REMINDER_MINUTES || 60);
+const telegramEnabled = String(process.env.TELEGRAM_BOT_ENABLED || "true").trim().toLowerCase() !== "false";
 
 module.exports = {
   version: packageInfo.version,
@@ -46,7 +47,9 @@ module.exports = {
     name: process.env.ADMIN_NAME || "Administrador"
   },
   telegram: {
+    botName: process.env.TELEGRAM_BOT_NAME || "Lavadero Centria",
     token: telegramToken,
+    enabled: telegramEnabled,
     universalPin: String(process.env.TELEGRAM_UNIVERSAL_PIN || "").trim(),
     reservationReminderMinutes: Number.isFinite(telegramReminderMinutes) && telegramReminderMinutes > 0
       ? Math.round(telegramReminderMinutes)

@@ -1,0 +1,127 @@
+<%- include('../partials/header') %>
+
+<div class="page-head electronic-config-head">
+  <div>
+    <h1>Configuración Telegram</h1>
+    <p>Administre el bot y los avisos de reservas para el personal.</p>
+  </div>
+  <a class="button secondary" href="/">Volver al inicio</a>
+</div>
+
+<section class="grid two electronic-config-grid">
+  <form class="panel stack" method="post" action="/telegram/config">
+    <div class="config-section-heading">
+      <span class="config-icon <%= telegramRuntimeActive ? 'active' : '' %>"><%= telegramRuntimeActive ? '✓' : '!' %></span>
+      <div>
+        <h2>Datos del bot</h2>
+        <p><%= telegramRuntimeActive ? 'Telegram está activo en este servidor.' : 'Telegram está desactivado o falta completar sus datos.' %></p>
+      </div>
+    </div>
+
+    <label>
+      Nombre visible del bot
+      <input name="nombre_bot" maxlength="120" value="<%= telegramConfig.nombre_bot %>" required>
+      <small>Es el nombre mostrado dentro de esta aplicación. El nombre oficial se cambia con @BotFather.</small>
+    </label>
+
+    <label>
+      Token de @BotFather
+      <span class="input-with-action">
+        <input name="bot_token" type="password" autocomplete="new-password" placeholder="<%= telegramConfig.token_enmascarado || 'Pegue el token aquí' %>" data-toggle-password-input>
+        <button class="button secondary" type="button" data-toggle-password>Mostrar</button>
+      </span>
+      <small>Deje vacío para conservar el token actual.</small>
+    </label>
+    <% if (telegramConfig.token_configurado) { %>
+      <label class="checkbox-row"><input type="checkbox" name="clear_token"> Borrar el token guardado</label>
+    <% } %>
+
+    <label>
+      PIN universal
+      <input name="pin_universal" type="password" inputmode="numeric" autocomplete="new-password" placeholder="<%= telegramConfig.pin_configurado ? 'PIN configurado' : 'PIN de 4 a 10 dígitos' %>">
+      <small>Se usa cuando un celular envía /start al bot. Deje vacío para conservarlo.</small>
+    </label>
+    <% if (telegramConfig.pin_configurado) { %>
+      <label class="checkbox-row"><input type="checkbox" name="clear_pin"> Borrar el PIN guardado</label>
+    <% } %>
+
+    <label class="checkbox-row"><input type="checkbox" name="activo" <%= telegramConfig.activo ? 'checked' : '' %>> Bot activo</label>
+
+    <div class="grid two">
+      <label>
+        Recordatorio (minutos antes)
+        <input name="reminder_minutes" type="number" min="1" max="1440" value="<%= telegramConfig.reminder_minutes %>" required>
+      </label>
+      <label>
+        Zona horaria
+        <input name="timezone" value="<%= telegramConfig.timezone %>" required>
+      </label>
+    </div>
+
+    <p class="muted">Última modificación: <%= telegramConfig.actualizado_en ? formatDateTimeShort(telegramConfig.actualizado_en) : '-' %> por <%= telegramConfig.actualizado_por || 'Sistema' %>.</p>
+    <button class="config-primary-action" type="submit">Guardar y aplicar configuración</button>
+  </form>
+
+  <section class="panel stack">
+    <div class="config-section-heading">
+      <span class="config-icon active">?</span>
+      <div>
+        <h2>Manual de uso</h2>
+        <p>Pasos para poner en marcha los avisos en iPhone y Android.</p>
+      </div>
+    </div>
+    <ol class="telegram-manual-list">
+      <li>En Telegram, abra <strong>@BotFather</strong>, use <strong>/newbot</strong> y copie el token.</li>
+      <li>Defina un PIN numérico, péguelo en esta pantalla y guarde la configuración.</li>
+      <li>En cada celular, abra el bot, envíe <strong>/start</strong> y luego el PIN.</li>
+      <li>Compruebe la entrega con <strong>/prueba_avisos</strong> o con el botón de prueba.</li>
+      <li>Al crear una reserva se envía una confirmación; el recordatorio llega según los minutos configurados.</li>
+      <li>Para cambiar el nombre oficial o regenerar el token use @BotFather y luego actualice esta pantalla.</li>
+      <li>Si un celular ya no debe recibir avisos, revóquelo en la tabla de autorizaciones.</li>
+    </ol>
+    <div class="config-warning">
+      <strong>Importante</strong>
+      <p>El token se guarda en la base de datos como texto editable. Limite el acceso a esta pantalla y mantenga las notificaciones de Telegram activadas en cada teléfono.</p>
+    </div>
+  </section>
+</section>
+
+<section class="panel stack">
+  <div class="config-section-heading">
+    <span class="config-icon active">☎</span>
+    <div>
+      <h2>Celulares autorizados</h2>
+      <p>Todos los celulares activos reciben confirmaciones y recordatorios.</p>
+    </div>
+    <form method="post" action="/telegram/config/prueba">
+      <button class="button secondary" type="submit">Enviar prueba a todos</button>
+    </form>
+  </div>
+  <% if (authorizations.length) { %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Chat</th><th>Nombre</th><th>Autorizado</th><th>Estado</th><th></th></tr></thead>
+        <tbody>
+          <% authorizations.forEach((authorization) => { %>
+            <tr>
+              <td><code><%= authorization.chat_id %></code></td>
+              <td><%= authorization.nombre_visible || (authorization.nombre_usuario ? `@${authorization.nombre_usuario}` : '-') %></td>
+              <td><%= formatDateTimeShort(authorization.autorizado_en) %></td>
+              <td><span class="badge <%= authorization.activo ? 'badge-success' : 'badge-muted' %>"><%= authorization.activo ? 'Activo' : 'Revocado' %></span></td>
+              <td>
+                <form method="post" action="/telegram/config/autorizaciones/<%= authorization.chat_id %>">
+                  <input type="hidden" name="activo" value="<%= authorization.activo ? 'false' : 'true' %>">
+                  <button class="button secondary compact-button" type="submit"><%= authorization.activo ? 'Revocar' : 'Activar' %></button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } else { %>
+    <div class="config-empty-state">Todavía no hay celulares autorizados. Use /start y el PIN desde Telegram.</div>
+  <% } %>
+</section>
+
+<%- include('../partials/footer') %>

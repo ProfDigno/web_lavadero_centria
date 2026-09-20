@@ -30,6 +30,16 @@
     window.setInterval(updateSystemClock, 1000);
   }
 
+  document.querySelectorAll("[data-toggle-password]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const input = button.parentElement?.querySelector("[data-toggle-password-input]");
+      if (!input) return;
+      const visible = input.type === "text";
+      input.type = visible ? "password" : "text";
+      button.textContent = visible ? "Mostrar" : "Ocultar";
+    });
+  });
+
   if (analysisPersonalSelect) {
     analysisPersonalSelect.addEventListener("change", () => {
       const form = analysisPersonalSelect.closest("form");

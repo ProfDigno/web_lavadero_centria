@@ -7,6 +7,7 @@ const TABLE_PRIMARY_KEYS = {
   reservas_lavado: "idreserva_lavado",
   reserva_lavado_servicios: "idreserva_lavado_servicio",
   telegram_reserva_notificaciones: "idtelegram_reserva_notificacion",
+  telegram_config: "idtelegram_config",
   caja_sesion_denominaciones: "idcaja_sesion_denominacion",
   caja_sesion_formas_pago: "idcaja_sesion_forma_pago",
   caja_sesion_movimientos: "idcaja_sesion_movimiento",

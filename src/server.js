@@ -25,12 +25,20 @@ const {
   sincronizarLavadoEnCaja,
   sincronizarCajaSesionAbierta
 } = require("./caja-cierres");
-const { startTelegramBot } = require("./telegram-bot");
+const { reloadTelegramBot, startTelegramBot } = require("./telegram-bot");
 const {
   omitReservationNotifications,
   queueReservationConfirmation,
+  sendTestNotificationToAll,
   startReservationNotificationWorker
 } = require("./telegram-reservation-notifications");
+const {
+  getTelegramConfigForView,
+  listTelegramAuthorizations,
+  loadTelegramSettings,
+  saveTelegramSettings,
+  setTelegramAuthorizationStatus
+} = require("./telegram-settings");
 const {
   authorizationUrl: googleAuthorizationUrl,
   chooseCalendar: chooseGoogleCalendar,
@@ -182,7 +190,8 @@ app.use(async (req, res, next) => {
     const isClosurePath = req.path === "/caja-cierres" || req.path.startsWith("/caja-cierres/");
     const isLogoutPath = req.path === "/logout";
     const isGoogleCalendarPath = req.path === "/google-calendar" || req.path.startsWith("/google-calendar/");
-    if (req.cajaMenuRestringido && !isClosurePath && !isLogoutPath && !isGoogleCalendarPath) {
+    const isTelegramConfigPath = req.path === "/telegram/config" || req.path.startsWith("/telegram/config/");
+    if (req.cajaMenuRestringido && !isClosurePath && !isLogoutPath && !isGoogleCalendarPath && !isTelegramConfigPath) {
       return res.redirect("/caja-cierres");
     }
     next();
@@ -280,6 +289,14 @@ function requireItem(code, blockedMessage) {
 
 function requireEvent(code) {
   return requirePermission("eventos", code);
+}
+
+function requireTelegramAdmin(req, res, next) {
+  if (req.authorization?.roll === "ADMINISTRADOR") return next();
+  return res.status(403).render("error", {
+    title: "Acceso bloqueado",
+    message: "La configuración de Telegram está disponible únicamente para administradores."
+  });
 }
 
 function requireCalendarAccess(req, res, next) {
@@ -2741,6 +2758,69 @@ app.post("/google-calendar/disconnect", requireAuth, requireCalendarAccess, requ
     setFlash(req, "error", error.message || "No se pudo desconectar Google Calendar.");
   }
   res.redirect("/google-calendar");
+});
+
+app.get("/telegram/config", requireAuth, requireTelegramAdmin, requireEvent("telegram_config-ocultar"), async (req, res, next) => {
+  try {
+    const [telegramConfig, authorizations] = await Promise.all([
+      getTelegramConfigForView(),
+      listTelegramAuthorizations()
+    ]);
+    res.render("telegram/config", {
+      title: "Configuración Telegram",
+      telegramConfig,
+      authorizations,
+      telegramRuntimeActive: Boolean(config.telegram.enabled && config.telegram.token)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/telegram/config", requireAuth, requireTelegramAdmin, requireEvent("telegram_config-ocultar"), async (req, res) => {
+  try {
+    await saveTelegramSettings({
+      botName: req.body.nombre_bot,
+      botToken: req.body.bot_token,
+      clearToken: req.body.clear_token === "on",
+      pin: req.body.pin_universal,
+      clearPin: req.body.clear_pin === "on",
+      active: req.body.activo === "on",
+      reminderMinutes: req.body.reminder_minutes,
+      timezone: req.body.timezone
+    }, currentUser(req));
+    try {
+      const bot = await reloadTelegramBot();
+      startReservationNotificationWorker(bot);
+      setFlash(req, "success", bot ? "Configuración guardada y Telegram conectado." : "Configuración guardada. Telegram quedó desactivado.");
+    } catch (error) {
+      startReservationNotificationWorker(null);
+      setFlash(req, "error", `Configuración guardada, pero Telegram no pudo conectarse: ${error.message}`);
+    }
+  } catch (error) {
+    setFlash(req, "error", error.message || "No se pudo guardar la configuración de Telegram.");
+  }
+  res.redirect("/telegram/config");
+});
+
+app.post("/telegram/config/prueba", requireAuth, requireTelegramAdmin, requireEvent("telegram_config-ocultar"), async (req, res) => {
+  try {
+    const count = await sendTestNotificationToAll();
+    setFlash(req, "success", `Prueba enviada a ${count} celular${count === 1 ? "" : "es"} autorizado${count === 1 ? "" : "s"}.`);
+  } catch (error) {
+    setFlash(req, "error", error.message || "No se pudo enviar la prueba.");
+  }
+  res.redirect("/telegram/config");
+});
+
+app.post("/telegram/config/autorizaciones/:chatId", requireAuth, requireTelegramAdmin, requireEvent("telegram_config-ocultar"), async (req, res) => {
+  try {
+    await setTelegramAuthorizationStatus(req.params.chatId, req.body.activo === "true");
+    setFlash(req, "success", req.body.activo === "true" ? "Celular activado." : "Celular revocado.");
+  } catch (error) {
+    setFlash(req, "error", error.message || "No se pudo actualizar el celular.");
+  }
+  res.redirect("/telegram/config");
 });
 
 app.get("/calendario", requireAuth, requireCalendarAccess, async (req, res, next) => {
@@ -5758,5 +5838,10 @@ app.use((error, req, res, next) => {
 
 app.listen(config.port, () => {
   console.log(`Lavadero Centria listo en http://localhost:${config.port}`);
-  startReservationNotificationWorker(startTelegramBot());
+  loadTelegramSettings()
+    .catch((error) => console.error("No se pudo cargar la configuración Telegram desde la base:", error.message))
+    .then(() => {
+      const bot = startTelegramBot();
+      startReservationNotificationWorker(bot);
+    });
 });

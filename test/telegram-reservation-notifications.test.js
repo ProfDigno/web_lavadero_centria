@@ -5,6 +5,7 @@ const {
   mergeRecipientChatIds,
   notificationMessage
 } = require("../src/telegram-reservation-notifications");
+const { maskSecret, validateTelegramSettingsInput } = require("../src/telegram-settings");
 
 test("combina y elimina destinatarios duplicados", () => {
   assert.deepEqual(
@@ -48,4 +49,18 @@ test("identifica claramente el recordatorio", () => {
   });
 
   assert.match(message, /Recordatorio: lavado en 60 minutos/);
+});
+
+test("enmascara secretos y valida la configuración Telegram", () => {
+  assert.equal(maskSecret("123456:abcdefghijklmnopqrstuv"), "••••••••••••stuv");
+  assert.equal(validateTelegramSettingsInput({
+    botName: "Lavadero Centria",
+    timezone: "America/Asuncion",
+    reminderMinutes: 60,
+    pin: "123456"
+  }).reminderMinutes, 60);
+  assert.throws(
+    () => validateTelegramSettingsInput({ botName: "", timezone: "America/Asuncion", reminderMinutes: 60, pin: "1234" }),
+    /nombre del bot es obligatorio/
+  );
 });

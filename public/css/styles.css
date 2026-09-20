@@ -470,6 +470,11 @@
   background: #fff0c7;
 }
 
+.badge-muted {
+  color: #526577;
+  background: #edf1f4;
+}
+
 @media (max-width: 700px) {
   .page-head-actions {
     width: 100%;
@@ -2321,6 +2326,42 @@ small,
   margin: 0;
   color: var(--muted);
   font-size: 13px;
+}
+
+.config-section-heading > form {
+  margin-left: auto;
+}
+
+.input-with-action {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.input-with-action input {
+  min-width: 0;
+  flex: 1;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #334454;
+  font-weight: 700;
+}
+
+.checkbox-row input {
+  width: auto;
+}
+
+.telegram-manual-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 22px;
+  color: #334454;
+  line-height: 1.5;
 }
 
 .config-icon {

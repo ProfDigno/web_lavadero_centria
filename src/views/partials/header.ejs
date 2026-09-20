@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><%= title %> - LAVADERO CENTRIA</title>
-  <link rel="stylesheet" href="/css/styles.css?v=20260920-system-clock">
+  <link rel="stylesheet" href="/css/styles.css?v=20260920-telegram-config">
 </head>
 <body class="<%= user ? 'app-page' : 'auth-page' %>">
   <% if (user) { %>
@@ -48,6 +48,7 @@
     <% const showFacturaLibre = canEvent('factura_libre-ocultar'); %>
     <% const showFacturaSend = canEvent('config_facturasend-ocultar'); %>
     <% const showGoogleCalendar = canEvent('google_calendar-ocultar') && ['ADMINISTRADOR', 'ENCARGADO'].includes(userRoll); %>
+    <% const showTelegramConfig = canEvent('telegram_config-ocultar') && userRoll === 'ADMINISTRADOR'; %>
     <% const showProductoCategoria = canEvent('producto_categoria-ocultar'); %>
     <% const showProducto = canEvent('producto-ocultar'); %>
     <% const showVenta = canEvent('venta-ocultar'); %>
@@ -181,6 +182,9 @@
           <% } %>
           <% if (showGoogleCalendar) { %>
             <a href="/google-calendar">Google Calendar</a>
+          <% } %>
+          <% if (showTelegramConfig) { %>
+            <a href="/telegram/config">Telegram</a>
           <% } %>
         </div>
       </details>
