@@ -2,6 +2,33 @@
   const navToggle = document.querySelector(".nav-toggle");
   const mainNavigation = document.querySelector("#main-navigation");
   const analysisPersonalSelect = document.querySelector("[data-analysis-personal-select]");
+  const systemClock = document.querySelector("[data-system-clock]");
+
+  if (systemClock) {
+    const dateElement = systemClock.querySelector("[data-system-date]");
+    const timeElement = systemClock.querySelector("[data-system-time]");
+    const dateFormatter = new Intl.DateTimeFormat("es-PY", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    });
+    const timeFormatter = new Intl.DateTimeFormat("es-PY", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    });
+
+    function updateSystemClock() {
+      const now = new Date();
+      if (dateElement) dateElement.textContent = dateFormatter.format(now);
+      if (timeElement) timeElement.textContent = timeFormatter.format(now);
+      systemClock.dateTime = now.toISOString();
+    }
+
+    updateSystemClock();
+    window.setInterval(updateSystemClock, 1000);
+  }
 
   if (analysisPersonalSelect) {
     analysisPersonalSelect.addEventListener("change", () => {

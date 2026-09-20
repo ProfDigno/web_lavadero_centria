@@ -27,6 +27,23 @@ const {
 } = require("./caja-cierres");
 const { startTelegramBot } = require("./telegram-bot");
 const {
+  omitReservationNotifications,
+  queueReservationConfirmation,
+  startReservationNotificationWorker
+} = require("./telegram-reservation-notifications");
+const {
+  authorizationUrl: googleAuthorizationUrl,
+  chooseCalendar: chooseGoogleCalendar,
+  disconnect: disconnectGoogleCalendar,
+  exchangeCode: exchangeGoogleCode,
+  getConfig: getGoogleCalendarConfig,
+  isConfigured: isGoogleCalendarConfigured,
+  listCalendars: listGoogleCalendars,
+  markSyncError: markGoogleSyncError,
+  removeReservationEvent,
+  syncReservation
+} = require("./google-calendar");
+const {
   anularVenta,
   crearVenta,
   getVentaOptions,
@@ -164,7 +181,8 @@ app.use(async (req, res, next) => {
 
     const isClosurePath = req.path === "/caja-cierres" || req.path.startsWith("/caja-cierres/");
     const isLogoutPath = req.path === "/logout";
-    if (req.cajaMenuRestringido && !isClosurePath && !isLogoutPath) {
+    const isGoogleCalendarPath = req.path === "/google-calendar" || req.path.startsWith("/google-calendar/");
+    if (req.cajaMenuRestringido && !isClosurePath && !isLogoutPath && !isGoogleCalendarPath) {
       return res.redirect("/caja-cierres");
     }
     next();
@@ -309,6 +327,62 @@ function requireFacturaCreationPermission(req, res, next) {
 
 function currentUser(req) {
   return req.session.user ? req.session.user.nombre : "Sistema";
+}
+
+async function getReservationForGoogle(id) {
+  const result = await query(
+    `select r.idreserva_lavado as id, r.fecha_reserva, r.hora_reserva, r.estado, r.monto,
+            r.google_event_id, c.nombre as cliente_nombre, c.chapa, c.telefono,
+            coalesce(string_agg(s.nombre, ', ' order by rls.idreserva_lavado_servicio), '') as servicios
+     from reservas_lavado r
+     join clientes c on c.idcliente = r.fk_idcliente
+     left join reserva_lavado_servicios rls on rls.fk_idreserva_lavado = r.idreserva_lavado
+     left join servicios s on s.idservicio = rls.fk_idservicio
+     where r.idreserva_lavado = $1
+     group by r.idreserva_lavado, c.nombre, c.chapa, c.telefono`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+function syncReservationInBackground(id) {
+  getReservationForGoogle(id)
+    .then(async (reservation) => {
+      if (!reservation || ["CANCELADO", "CARGADO"].includes(reservation.estado)) return;
+      try {
+        await syncReservation(reservation);
+      } catch (error) {
+        await markGoogleSyncError(id, error);
+        console.error(`No se pudo sincronizar la reserva #${id} con Google Calendar:`, error.message);
+      }
+    })
+    .catch((error) => console.error(`No se pudo preparar la reserva #${id} para Google Calendar:`, error.message));
+}
+
+function removeReservationFromGoogleInBackground(id) {
+  getReservationForGoogle(id)
+    .then(async (reservation) => {
+      if (!reservation) return;
+      try {
+        await removeReservationEvent(reservation);
+      } catch (error) {
+        await markGoogleSyncError(id, error);
+        console.error(`No se pudo quitar la reserva #${id} de Google Calendar:`, error.message);
+      }
+    })
+    .catch((error) => console.error(`No se pudo preparar la reserva #${id} para quitarla de Google Calendar:`, error.message));
+}
+
+async function syncPendingReservations() {
+  const result = await query(
+    `select r.idreserva_lavado as id
+     from reservas_lavado r
+     where r.estado not in ('CANCELADO', 'CARGADO')
+       and (r.google_event_id is null or r.google_sync_status = 'ERROR')
+     order by r.fecha_reserva, r.hora_reserva, r.idreserva_lavado`
+  );
+  result.rows.forEach((reservation) => syncReservationInBackground(reservation.id));
+  return result.rows.length;
 }
 
 function cajaCierresSchemaMissing(error) {
@@ -2600,6 +2674,75 @@ app.get("/analisis-clientes", requireAuth, requireEvent("AnalisisCliente-ocultar
   }
 });
 
+app.get("/google-calendar", requireAuth, requireCalendarAccess, requireEvent("google_calendar-ocultar"), async (req, res, next) => {
+  try {
+    const googleConfig = await getGoogleCalendarConfig();
+    const calendars = googleConfig.connected ? await listGoogleCalendars() : [];
+    res.render("google-calendar/config", {
+      title: "Google Calendar",
+      googleConfig,
+      calendars,
+      googleConfigured: isGoogleCalendarConfigured()
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/google-calendar/auth", requireAuth, requireCalendarAccess, requireEvent("google_calendar-ocultar"), (req, res) => {
+  try {
+    if (!isGoogleCalendarConfigured()) {
+      setFlash(req, "error", "Configure GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET antes de conectar Google Calendar.");
+      return res.redirect("/google-calendar");
+    }
+    const state = crypto.randomBytes(24).toString("hex");
+    req.session.googleCalendarOAuthState = state;
+    res.redirect(googleAuthorizationUrl(state));
+  } catch (error) {
+    setFlash(req, "error", error.message);
+    res.redirect("/google-calendar");
+  }
+});
+
+app.get("/google-calendar/oauth2callback", requireAuth, requireCalendarAccess, requireEvent("google_calendar-ocultar"), async (req, res) => {
+  try {
+    const expectedState = req.session.googleCalendarOAuthState;
+    delete req.session.googleCalendarOAuthState;
+    if (!expectedState || expectedState !== String(req.query.state || "")) throw new Error("La autorización de Google expiró. Intente nuevamente.");
+    if (req.query.error) throw new Error(`Google rechazó la autorización: ${req.query.error}.`);
+    await exchangeGoogleCode(String(req.query.code || ""));
+    setFlash(req, "success", "Cuenta de Google conectada. Ahora seleccione el calendario de reservas.");
+  } catch (error) {
+    setFlash(req, "error", error.message || "No se pudo conectar Google Calendar.");
+  }
+  res.redirect("/google-calendar");
+});
+
+app.post("/google-calendar/config", requireAuth, requireCalendarAccess, requireEvent("google_calendar-ocultar"), async (req, res) => {
+  try {
+    await chooseGoogleCalendar(
+      String(req.body.calendar_id || "").trim() || null,
+      String(req.body.calendar_name || config.googleCalendar.calendarName).trim() || config.googleCalendar.calendarName,
+      Number(req.body.reminder_minutes || 60)
+    );
+    const count = await syncPendingReservations();
+    setFlash(req, "success", `Calendario configurado. Se sincronizarán ${count} reserva${count === 1 ? "" : "s"} pendiente${count === 1 ? "" : "s"}.`);
+  } catch (error) {
+    setFlash(req, "error", error.message || "No se pudo configurar Google Calendar.");
+  }
+  res.redirect("/google-calendar");
+});
+
+app.post("/google-calendar/disconnect", requireAuth, requireCalendarAccess, requireEvent("google_calendar-ocultar"), async (req, res) => {
+  try {
+    await disconnectGoogleCalendar();
+    setFlash(req, "success", "La cuenta de Google Calendar fue desconectada.");
+  } catch (error) {
+    setFlash(req, "error", error.message || "No se pudo desconectar Google Calendar.");
+  }
+  res.redirect("/google-calendar");
+});
+
 app.get("/calendario", requireAuth, requireCalendarAccess, async (req, res, next) => {
   try {
     const month = normalizeCalendarMonth(req.query.mes);
@@ -2722,6 +2865,9 @@ app.post("/calendario/reservas", requireAuth, requireCalendarAccess, async (req,
       }
       return created.rows[0].idreserva_lavado;
     });
+    syncReservationInBackground(reservationId);
+    queueReservationConfirmation(reservationId)
+      .catch((error) => console.error(`No se pudo preparar la confirmación Telegram de la reserva #${reservationId}:`, error.message));
     setFlash(req, "success", `Reserva #${reservationId} creada correctamente.`);
   } catch (error) {
     setFlash(req, "error", error.code === "23505" ? "Ese cliente ya tiene una reserva activa en esa fecha y hora." : userErrorMessage(error));
@@ -2770,10 +2916,13 @@ app.post("/calendario/reservas/:id/cancelar", requireAuth, requireCalendarAccess
       `update reservas_lavado
        set estado = 'CANCELADO', cancelado_en = now(), cancelado_por = $2
        where idreserva_lavado = $1 and estado not in ('CANCELADO', 'CARGADO')
-       returning idreserva_lavado`,
+       returning idreserva_lavado as id`,
       [req.params.id, currentUser(req)]
     );
     if (!result.rows[0]) return res.status(409).json({ message: "La reserva ya fue cancelada o cargada." });
+    removeReservationFromGoogleInBackground(result.rows[0].id);
+    omitReservationNotifications(result.rows[0].id)
+      .catch((error) => console.error(`No se pudo omitir las notificaciones Telegram de la reserva #${result.rows[0].id}:`, error.message));
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: userErrorMessage(error) });
@@ -3418,6 +3567,11 @@ app.post("/lavados", requireAuth, async (req, res, next) => {
       return lavado.id;
     });
 
+    if (reservaId) {
+      removeReservationFromGoogleInBackground(reservaId);
+      omitReservationNotifications(reservaId)
+        .catch((error) => console.error(`No se pudo omitir las notificaciones Telegram de la reserva #${reservaId}:`, error.message));
+    }
     setFlash(req, "success", `Lavado #${lavadoId} creado correctamente.`);
     res.redirect("/lavados");
   } catch (error) {
@@ -5604,5 +5758,5 @@ app.use((error, req, res, next) => {
 
 app.listen(config.port, () => {
   console.log(`Lavadero Centria listo en http://localhost:${config.port}`);
-  startTelegramBot();
+  startReservationNotificationWorker(startTelegramBot());
 });

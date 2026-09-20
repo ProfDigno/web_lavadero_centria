@@ -1,0 +1,76 @@
+<%- include('../partials/header') %>
+<div class="page-head electronic-config-head">
+  <div>
+    <h1>Google Calendar</h1>
+    <p>Sincronice las reservas y reciba un aviso en el celular una hora antes.</p>
+  </div>
+  <a class="button secondary" href="/calendario">Volver al calendario</a>
+</div>
+
+<% if (!googleConfigured) { %>
+  <section class="panel config-warning">
+    <h2>Falta configurar Google</h2>
+    <p>Complete <code>GOOGLE_CLIENT_ID</code> y <code>GOOGLE_CLIENT_SECRET</code> en el archivo de entorno y reinicie el servidor.</p>
+  </section>
+<% } %>
+
+<section class="grid two electronic-config-grid">
+  <section class="panel stack">
+    <div class="config-section-heading">
+      <span class="config-icon <%= googleConfig.connected ? 'active' : '' %>"><%= googleConfig.connected ? '✓' : '!' %></span>
+      <div>
+        <h2>Cuenta central</h2>
+        <p><%= googleConfig.connected ? 'La cuenta está autorizada para sincronizar reservas.' : 'Autorice la cuenta de Google que recibirá los avisos.' %></p>
+      </div>
+    </div>
+    <% if (googleConfig.connected) { %>
+      <dl class="detail-list compact-detail">
+        <div><dt>Cuenta</dt><dd><%= googleConfig.account_email || 'Cuenta autorizada' %></dd></div>
+        <div><dt>Calendario</dt><dd><%= googleConfig.calendar_name || 'Sin seleccionar' %></dd></div>
+        <div><dt>Aviso</dt><dd><%= googleConfig.reminder_minutes %> minutos antes</dd></div>
+      </dl>
+      <form method="post" action="/google-calendar/disconnect">
+        <button class="danger" type="submit">Desconectar cuenta</button>
+      </form>
+    <% } else { %>
+      <% if (googleConfigured) { %>
+        <a class="button config-primary-action" href="/google-calendar/auth">Conectar con Google</a>
+      <% } else { %>
+        <button class="config-primary-action" type="button" disabled>Conectar con Google</button>
+      <% } %>
+    <% } %>
+  </section>
+
+  <form class="panel stack" method="post" action="/google-calendar/config">
+    <div class="config-section-heading">
+      <span class="config-icon active">◷</span>
+      <div>
+        <h2>Calendario de reservas</h2>
+        <p>Use un calendario separado para controlar sus avisos.</p>
+      </div>
+    </div>
+    <label>
+      Calendario existente
+      <select name="calendar_id" <%= googleConfig.connected ? '' : 'disabled' %>>
+        <option value="">Crear o usar “<%= googleConfig.calendar_name || 'Lavadero' %>”</option>
+        <% calendars.forEach((calendar) => { %>
+          <option value="<%= calendar.id %>" <%= calendar.id === googleConfig.calendar_id ? 'selected' : '' %>><%= calendar.summary %></option>
+        <% }) %>
+      </select>
+    </label>
+    <label>
+      Nombre si se crea uno nuevo
+      <input name="calendar_name" value="<%= googleConfig.calendar_name || 'Lavadero' %>" <%= googleConfig.connected ? '' : 'disabled' %>>
+    </label>
+    <label>
+      Aviso en el celular
+      <select name="reminder_minutes" <%= googleConfig.connected ? '' : 'disabled' %>>
+        <% [0, 15, 30, 60, 120, 1440].forEach((minutes) => { %>
+          <option value="<%= minutes %>" <%= Number(googleConfig.reminder_minutes) === minutes ? 'selected' : '' %>><%= minutes === 0 ? 'Al momento' : minutes === 1440 ? '24 horas antes' : `${minutes} minutos antes` %></option>
+        <% }) %>
+      </select>
+    </label>
+    <button class="config-primary-action" type="submit" <%= googleConfig.connected ? '' : 'disabled' %>>Guardar calendario</button>
+  </form>
+</section>
+<%- include('../partials/footer') %>

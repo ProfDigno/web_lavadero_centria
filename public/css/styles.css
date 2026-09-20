@@ -627,6 +627,27 @@ button.link {
   gap: 10px;
 }
 
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.system-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, .9);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.system-clock [data-system-time] {
+  color: #fff;
+  font-weight: 750;
+}
+
 .brand {
   color: #fff;
   font-size: 18px;
@@ -3688,9 +3709,13 @@ small,
     flex-direction: column;
   }
 
-  .topbar form {
+  .topbar-right {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .topbar-right form {
+    width: auto;
   }
 
   .nav-toggle {

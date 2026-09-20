@@ -4,16 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><%= title %> - LAVADERO CENTRIA</title>
-  <link rel="stylesheet" href="/css/styles.css?v=20260917-calendario-form">
+  <link rel="stylesheet" href="/css/styles.css?v=20260920-system-clock">
 </head>
 <body class="<%= user ? 'app-page' : 'auth-page' %>">
   <% if (user) { %>
     <header class="topbar">
       <a class="brand" href="/">LAVADERO CENTRIA</a>
-      <form action="/logout" method="post">
-        <span><%= user.nombre %></span>
-        <button class="ghost" type="submit">Salir</button>
-      </form>
+      <div class="topbar-right">
+        <time class="system-clock" data-system-clock aria-label="Fecha y hora del sistema">
+          <span data-system-date>--/--/----</span>
+          <span aria-hidden="true">·</span>
+          <span data-system-time>--:--:--</span>
+        </time>
+        <form action="/logout" method="post">
+          <span><%= user.nombre %></span>
+          <button class="ghost" type="submit">Salir</button>
+        </form>
+      </div>
     </header>
     <button class="nav-toggle" type="button" aria-label="Abrir menú de navegación" aria-expanded="false" aria-controls="main-navigation">
       <span class="nav-toggle-icon" aria-hidden="true"><span></span><span></span><span></span></span>
@@ -40,6 +47,7 @@
     <% const showFactura = canEvent('factura-ocultar'); %>
     <% const showFacturaLibre = canEvent('factura_libre-ocultar'); %>
     <% const showFacturaSend = canEvent('config_facturasend-ocultar'); %>
+    <% const showGoogleCalendar = canEvent('google_calendar-ocultar') && ['ADMINISTRADOR', 'ENCARGADO'].includes(userRoll); %>
     <% const showProductoCategoria = canEvent('producto_categoria-ocultar'); %>
     <% const showProducto = canEvent('producto-ocultar'); %>
     <% const showVenta = canEvent('venta-ocultar'); %>
@@ -170,6 +178,9 @@
         <div class="nav-submenu">
           <% if (showPagos) { %>
             <a href="/formas-pago"><span class="nav-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg></span>Pagos</a>
+          <% } %>
+          <% if (showGoogleCalendar) { %>
+            <a href="/google-calendar">Google Calendar</a>
           <% } %>
         </div>
       </details>

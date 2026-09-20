@@ -3,6 +3,7 @@ const os = require("os");
 const path = require("path");
 const config = require("./config");
 const { query, withTransaction } = require("./db");
+const { sendTestNotificationToAll } = require("./telegram-reservation-notifications");
 
 const sessions = new Map();
 const SESSION_TTL_MS = 30 * 60 * 1000;
@@ -531,6 +532,14 @@ async function handleText(bot, msg) {
       return send(bot, chatId, "Chat autorizado correctamente. Ya podes usar /nuevo para comenzar.");
     }
     return send(bot, chatId, authorizationMessage());
+  }
+  if (text === "/prueba_avisos") {
+    try {
+      const count = await sendTestNotificationToAll();
+      return send(bot, chatId, `Prueba enviada a ${count} celular${count === 1 ? "" : "es"} autorizado${count === 1 ? "" : "s"}.`);
+    } catch (error) {
+      return send(bot, chatId, `No se pudo enviar la prueba: ${error.message}`);
+    }
   }
   if (text === "/start" || text === "/nuevo") {
     newSession(chatId);

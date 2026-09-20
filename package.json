@@ -1,9 +1,10 @@
 {
   "name": "app-web-lavadero",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Aplicacion web local para gestion de lavadero de autos.",
   "main": "src/server.js",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "start": "node src/server.js",
     "dev": "node src/server.js",
     "migrate": "node src/migrate.js",
@@ -20,6 +21,7 @@
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "express-session": "^1.18.1",
+    "googleapis": "160.0.0",
     "multer": "^2.2.0",
     "node-telegram-bot-api": "^0.66.0",
     "pdfkit": "^0.19.1",
