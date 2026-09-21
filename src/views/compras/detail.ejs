@@ -1,0 +1,28 @@
+<%- include('../partials/header') %>
+<div class="page-head"><div><h1>Compra <%= compra.numero %></h1><p>Detalle de la operación registrada</p></div><a class="button secondary" href="/compras">Volver a compras</a></div>
+<section class="metrics compact venta-detail-metrics">
+  <article><span>Estado</span><strong><%= compra.estado %></strong></article>
+  <article><span>Condición</span><strong class="venta-condition-badge <%= compra.condicion === 'CREDITO' ? 'is-credit' : 'is-cash' %>"><%= compra.condicion %></strong></article>
+  <article><span>Proveedor</span><strong><%= compra.proveedor_nombre %></strong></article>
+  <article><span>Forma de pago</span><strong class="venta-payment-name" style="--venta-payment-color: <%= compra.forma_pago_color || '#687385' %>"><%= compra.forma_pago %></strong></article>
+  <article><span>Total</span><strong><%= formatMoney(compra.total) %></strong></article>
+</section>
+<section class="panel venta-detail-panel">
+  <div class="section-title"><div><h2>Productos comprados</h2><p>Fecha: <%= formatDateTime(compra.fecha_compra) %></p></div>
+    <div class="actions">
+      <% if (compra.condicion === 'CREDITO' && compra.estado === 'PENDIENTE') { %>
+        <form method="post" action="/compras/<%= compra.idcompra %>/marcar-pagada"><button type="submit" class="secondary">Marcar pagada</button></form>
+      <% } %>
+      <% if (compra.estado !== 'ANULADO') { %>
+        <form method="post" action="/compras/<%= compra.idcompra %>/anular" data-confirm="¿Anular la compra? El stock disminuirá y el pago registrado se revertirá en caja."><button type="submit" class="venta-anular-button">Anular compra</button></form>
+      <% } %>
+    </div>
+  </div>
+  <div class="table-wrap"><table><thead><tr><th>Código</th><th>Producto</th><th>Cantidad</th><th class="money-cell">Precio compra</th><th class="money-cell">Subtotal</th></tr></thead>
+    <tbody><% compra.items.forEach((item) => { %><tr><td><%= item.codigo %></td><td><%= item.producto_nombre %></td><td><%= item.cantidad %></td><td class="money-cell"><%= formatMoney(item.precio_compra) %></td><td class="money-cell"><%= formatMoney(item.subtotal) %></td></tr><% }) %></tbody>
+    <tfoot><tr><th colspan="4" class="money-cell">Total</th><th class="money-cell"><%= formatMoney(compra.total) %></th></tr></tfoot>
+  </table></div>
+  <% if (compra.pagado_en) { %><p class="hint">Pagada el <%= formatDateTime(compra.pagado_en) %> por <%= compra.pagado_por %>.</p><% } %>
+  <% if (compra.anulado_en) { %><p class="hint">Anulada el <%= formatDateTime(compra.anulado_en) %> por <%= compra.anulado_por %>.</p><% } %>
+</section>
+<%- include('../partials/footer') %>

@@ -115,7 +115,7 @@
         <thead><tr><th>Fecha</th><th>Tipo</th><th>Origen</th><th>Referencia</th><th>Forma de pago</th><th>Monto</th></tr></thead>
         <tbody>
           <% detalle.movimientos.forEach((movimiento) => { %>
-            <tr class="<%= movimiento.origen === 'VENTA' && movimiento.tipo === 'EGRESO' ? 'caja-venta-reversion' : '' %>"><td><%= formatDateTimeShort(movimiento.ocurrido_en) %></td><td><span class="badge <%= movimiento.tipo === 'INGRESO' ? 'badge-success' : 'badge-danger' %>"><%= movimiento.tipo %></span></td><td><%= movimiento.origen %></td><td><strong><%= movimiento.referencia || '-' %></strong><br><small><%= movimiento.descripcion || '' %></small></td><td><%- include('partials/payment_chip', { nombre: movimiento.forma_pago_nombre, icono: movimiento.forma_pago_icono, color: movimiento.forma_pago_color }) %></td><td class="money-cell"><%= formatMoney(movimiento.monto) %></td></tr>
+            <tr class="<%= (movimiento.origen === 'VENTA' && movimiento.tipo === 'EGRESO') || (movimiento.origen === 'COMPRA' && movimiento.tipo === 'INGRESO') ? 'caja-venta-reversion' : '' %>"><td><%= formatDateTimeShort(movimiento.ocurrido_en) %></td><td><span class="badge <%= movimiento.tipo === 'INGRESO' ? 'badge-success' : 'badge-danger' %>"><%= movimiento.tipo %></span></td><td><%= movimiento.origen %></td><td><strong><%= movimiento.referencia || '-' %></strong><br><small><%= movimiento.descripcion || '' %></small></td><td><%- include('partials/payment_chip', { nombre: movimiento.forma_pago_nombre, icono: movimiento.forma_pago_icono, color: movimiento.forma_pago_color }) %></td><td class="money-cell"><%= formatMoney(movimiento.monto) %></td></tr>
           <% }) %>
           <% if (!detalle.movimientos.length) { %><tr><td colspan="6">La sesión no contiene movimientos.</td></tr><% } %>
         </tbody>
@@ -163,7 +163,7 @@
               <thead><tr><th>Fecha</th><th>Tipo</th><th>Origen</th><th>Referencia</th><th>Monto</th></tr></thead>
               <tbody>
                 <% movimientos.forEach((movimiento) => { %>
-                  <tr class="<%= movimiento.origen === 'VENTA' && movimiento.tipo === 'EGRESO' ? 'caja-venta-reversion' : '' %>"><td><%= formatDateTimeShort(movimiento.ocurrido_en) %></td><td><span class="badge <%= movimiento.tipo === 'INGRESO' ? 'badge-success' : 'badge-danger' %>"><%= movimiento.tipo %></span></td><td><%= movimiento.origen %></td><td><%= movimiento.referencia || '-' %></td><td class="money-cell"><%= formatMoney(movimiento.monto) %></td></tr>
+                  <tr class="<%= (movimiento.origen === 'VENTA' && movimiento.tipo === 'EGRESO') || (movimiento.origen === 'COMPRA' && movimiento.tipo === 'INGRESO') ? 'caja-venta-reversion' : '' %>"><td><%= formatDateTimeShort(movimiento.ocurrido_en) %></td><td><span class="badge <%= movimiento.tipo === 'INGRESO' ? 'badge-success' : 'badge-danger' %>"><%= movimiento.tipo %></span></td><td><%= movimiento.origen %></td><td><%= movimiento.referencia || '-' %></td><td class="money-cell"><%= formatMoney(movimiento.monto) %></td></tr>
                 <% }) %>
                 <% if (!movimientos.length) { %><tr><td colspan="5">Sin movimientos elegibles.</td></tr><% } %>
               </tbody>

@@ -47,6 +47,9 @@ const {
   marcarVentaPagada,
   obtenerVenta
 } = require("./ventas");
+const {
+  anularCompra, crearCompra, getCompraOptions, listarCompras, marcarCompraPagada, obtenerCompra
+} = require("./compras");
 
 const app = express();
 const servicioGrupoUploadsDir = path.join(__dirname, "..", "public", "uploads", "servicio-grupos");
@@ -178,7 +181,10 @@ app.use(async (req, res, next) => {
     const isClosurePath = req.path === "/caja-cierres" || req.path.startsWith("/caja-cierres/");
     const isLogoutPath = req.path === "/logout";
     const isTelegramConfigPath = req.path === "/telegram/config" || req.path.startsWith("/telegram/config/");
-    if (req.cajaMenuRestringido && !isClosurePath && !isLogoutPath && !isTelegramConfigPath) {
+    const isUnpaidPurchasePath = !req.cajaBloqueadaPorFecha
+      && (req.path === "/compras" || req.path.startsWith("/compras/")
+        || req.path === "/proveedores" || req.path.startsWith("/proveedores/"));
+    if (req.cajaMenuRestringido && !isClosurePath && !isLogoutPath && !isTelegramConfigPath && !isUnpaidPurchasePath) {
       return res.redirect("/caja-cierres");
     }
     next();
@@ -230,6 +236,7 @@ function userErrorMessage(error) {
       producto_categoria_nombre_key: "Ya existe una categoria de productos con ese nombre.",
       producto_codigo_key: "Ya existe un producto con ese codigo.",
       venta_numero_key: "Ya existe ese numero de venta.",
+      compra_numero_key: "Ya existe ese número de compra.",
       usuarios_login_key: "Ya existe un usuario con ese login.",
       usuario_roll_roll_key: "Ya existe ese rol.",
       usuario_roll_evento_codigo_key: "Ya existe ese evento para el rol seleccionado.",
@@ -1407,6 +1414,43 @@ async function getCajaDia(fecha) {
     )
   ]);
 
+  const [comprasResult, comprasPendientesResult] = await Promise.all([
+    query(
+      `select * from (
+         select c.idcompra as id, c.numero, c.condicion, c.estado, c.total, c.fk_idforma_pago,
+                case when c.condicion = 'CREDITO' then c.pagado_en else c.fecha_compra end as fecha_efectiva,
+                'EGRESO' as tipo_movimiento, p.razon_social as proveedor_nombre,
+                fp.nombre as forma_pago, fp.icono_ruta as forma_pago_icono, fp.color as forma_pago_color
+         from compra c join proveedor p on p.idproveedor = c.fk_idproveedor
+         join formas_pago fp on fp.idforma_pago = c.fk_idforma_pago
+         where (c.estado = 'PAGADO'
+           or (c.estado = 'ANULADO' and exists (
+             select 1 from caja_sesion_movimientos m where m.fk_idcompra = c.idcompra and m.tipo = 'EGRESO'
+           )))
+           and ((c.condicion = 'CONTADO' and c.fecha_compra::date = $1)
+             or (c.condicion = 'CREDITO' and c.pagado_en::date = $1))
+         union all
+         select c.idcompra as id, c.numero, c.condicion, c.estado, c.total, c.fk_idforma_pago,
+                c.anulado_en as fecha_efectiva, 'INGRESO' as tipo_movimiento,
+                p.razon_social as proveedor_nombre,
+                fp.nombre as forma_pago, fp.icono_ruta as forma_pago_icono, fp.color as forma_pago_color
+         from compra c join proveedor p on p.idproveedor = c.fk_idproveedor
+         join formas_pago fp on fp.idforma_pago = c.fk_idforma_pago
+         where c.estado = 'ANULADO' and c.anulado_en::date = $1
+           and exists (select 1 from caja_sesion_movimientos m where m.fk_idcompra = c.idcompra and m.tipo = 'EGRESO')
+       ) compras_dia order by fecha_efectiva desc, id desc`, [fecha]
+    ),
+    query(
+      `select c.idcompra as id, c.numero, c.fecha_compra, c.total, c.fk_idforma_pago,
+              p.razon_social as proveedor_nombre,
+              fp.nombre as forma_pago, fp.icono_ruta as forma_pago_icono, fp.color as forma_pago_color
+       from compra c join proveedor p on p.idproveedor = c.fk_idproveedor
+       join formas_pago fp on fp.idforma_pago = c.fk_idforma_pago
+       where c.estado = 'PENDIENTE' and c.fecha_compra::date = $1
+       order by c.fecha_compra desc, c.idcompra desc`, [fecha]
+    )
+  ]);
+
   const resumen = emptyCajaResumen();
   const formas = {};
 
@@ -1449,6 +1493,13 @@ async function getCajaDia(fecha) {
     addCajaForma(formas, venta, venta.tipo_movimiento === "INGRESO" ? "ingresos" : "egresos", monto);
   });
 
+  comprasResult.rows.forEach((compra) => {
+    const monto = Number(compra.total || 0);
+    if (compra.tipo_movimiento === "INGRESO") resumen.ingresos += monto;
+    else resumen.egresos += monto;
+    addCajaForma(formas, compra, compra.tipo_movimiento === "INGRESO" ? "ingresos" : "egresos", monto);
+  });
+
   ventasPendientesResult.rows.forEach((venta) => {
     const monto = Number(venta.total || 0);
     const forma = addCajaForma(formas, venta, "pendientes", monto);
@@ -1476,7 +1527,9 @@ async function getCajaDia(fecha) {
     gastos: gastosResult.rows,
     vales: valesResult.rows,
     ventas: ventasResult.rows,
-    ventasPendientes: ventasPendientesResult.rows
+    ventasPendientes: ventasPendientesResult.rows,
+    compras: comprasResult.rows,
+    comprasPendientes: comprasPendientesResult.rows
   };
 }
 
@@ -1865,7 +1918,8 @@ app.get("/caja-cierres", requireAuth, requireCajaCierreAccess, async (req, res, 
         ?? movimiento.fk_idgrupo_cliente_creditos
         ?? movimiento.fk_idgasto
         ?? movimiento.fk_idvales_personal
-        ?? movimiento.fk_idventa;
+        ?? movimiento.fk_idventa
+        ?? movimiento.fk_idcompra;
       return `${movimiento.origen}:${movimiento.tipo}:${sourceId ?? `${movimiento.ocurrido_en}:${movimiento.referencia || ''}`}`;
     };
     const movimientos = [...movimientosRegistrados, ...movimientosElegibles].filter((movimiento, index, all) =>
@@ -2253,6 +2307,72 @@ app.get("/analisis-ventas", requireAuth, requireEvent("AnalisisVenta-ocultar"), 
   } catch (error) {
     next(error);
   }
+});
+
+app.get("/analisis-compras", requireAuth, requireEvent("AnalisisCompra-ocultar"), async (req, res, next) => {
+  try {
+    let fechaInicio = String(req.query.fecha_inicio || todayIso()).trim();
+    let fechaFin = String(req.query.fecha_fin || fechaInicio).trim();
+    if (fechaFin < fechaInicio) [fechaInicio, fechaFin] = [fechaFin, fechaInicio];
+    const params = [fechaInicio, fechaFin];
+    const [metricsResult, dailyResult, paymentsResult, productsResult, suppliersResult] = await Promise.all([
+      query(
+        `select count(*) filter (where c.estado <> 'ANULADO')::int as compras,
+                coalesce(sum(c.total) filter (where c.estado <> 'ANULADO'), 0) as total,
+                count(*) filter (where c.condicion = 'CONTADO' and c.estado <> 'ANULADO')::int as contado,
+                count(*) filter (where c.condicion = 'CREDITO' and c.estado <> 'ANULADO')::int as credito,
+                count(*) filter (where c.estado = 'PENDIENTE')::int as creditos_pendientes,
+                coalesce(sum(c.total) filter (where c.estado = 'PAGADO'), 0) as monto_pagado,
+                coalesce(sum(c.total) filter (where c.estado = 'PENDIENTE'), 0) as monto_pendiente,
+                count(*) filter (where c.estado = 'ANULADO')::int as anuladas,
+                (select coalesce(sum(ci.cantidad), 0) from compra_item ci join compra cx on cx.idcompra = ci.fk_idcompra
+                 where cx.fecha_compra::date between $1 and $2 and cx.estado <> 'ANULADO') as unidades
+         from compra c where c.fecha_compra::date between $1 and $2`, params
+      ),
+      query(
+        `select c.fecha_compra::date as fecha, count(*)::int as compras, coalesce(sum(c.total), 0) as total
+         from compra c where c.fecha_compra::date between $1 and $2 and c.estado <> 'ANULADO'
+         group by c.fecha_compra::date order by fecha`, params
+      ),
+      query(
+        `select fp.nombre, fp.color, count(c.idcompra)::int as cantidad, coalesce(sum(c.total), 0) as total
+         from compra c join formas_pago fp on fp.idforma_pago = c.fk_idforma_pago
+         where c.fecha_compra::date between $1 and $2 and c.estado = 'PAGADO'
+         group by fp.idforma_pago, fp.nombre, fp.color order by total desc, cantidad desc, fp.nombre`, params
+      ),
+      query(
+        `select p.codigo, p.nombre, coalesce(sum(ci.cantidad), 0)::int as cantidad,
+                coalesce(sum(ci.subtotal), 0) as total
+         from compra_item ci join compra c on c.idcompra = ci.fk_idcompra
+         join producto p on p.idproducto = ci.fk_idproducto
+         where c.fecha_compra::date between $1 and $2 and c.estado <> 'ANULADO'
+         group by p.idproducto, p.codigo, p.nombre order by cantidad desc, total desc, p.nombre limit 10`, params
+      ),
+      query(
+        `select p.razon_social as nombre, count(c.idcompra)::int as cantidad, coalesce(sum(c.total), 0) as total
+         from compra c join proveedor p on p.idproveedor = c.fk_idproveedor
+         where c.fecha_compra::date between $1 and $2 and c.estado <> 'ANULADO'
+         group by p.idproveedor, p.razon_social order by total desc, cantidad desc, p.razon_social limit 10`, params
+      )
+    ]);
+    const raw = metricsResult.rows[0] || {};
+    const metrics = Object.fromEntries(
+      ["compras", "total", "contado", "credito", "creditos_pendientes", "monto_pagado", "monto_pendiente", "anuladas", "unidades"]
+        .map((key) => [key, Number(raw[key] || 0)])
+    );
+    metrics.ticket_promedio = metrics.compras ? Math.round(metrics.total / metrics.compras) : 0;
+    const chartData = {
+      daily: dailyResult.rows.map((row) => ({ label: formatDate(row.fecha), compras: Number(row.compras), total: Number(row.total) })),
+      payments: paymentsResult.rows.map((row) => ({ label: row.nombre, value: Number(row.total), color: row.color })),
+      products: productsResult.rows.map((row) => ({ label: `${row.codigo} - ${row.nombre}`, value: Number(row.cantidad) })),
+      suppliers: suppliersResult.rows.map((row) => ({ label: row.nombre, value: Number(row.total) }))
+    };
+    res.render("analisis_compras", {
+      title: "Análisis de compras", fechaInicio, fechaFin, metrics,
+      payments: paymentsResult.rows, products: productsResult.rows,
+      suppliers: suppliersResult.rows, chartData
+    });
+  } catch (error) { next(error); }
 });
 
 app.get("/analisis-lavados", requireAuth, requireEvent("AnalisisLavado-ocultar"), async (req, res, next) => {
@@ -4901,6 +5021,70 @@ app.post("/ventas/:id/marcar-pagada", requireAuth, requireEvent("venta-ocultar")
   res.redirect(`/ventas/${req.params.id}`);
 });
 
+app.get("/compras", requireAuth, requireEvent("compra-ocultar"), async (req, res, next) => {
+  try {
+    const filters = {
+      desde: String(req.query.desde || ""),
+      hasta: String(req.query.hasta || ""),
+      proveedor: String(req.query.proveedor || ""),
+      condiciones: (Array.isArray(req.query.condicion) ? req.query.condicion : [req.query.condicion]).filter(Boolean)
+    };
+    const result = await listarCompras({ ...filters, pagina: req.query.pagina });
+    res.render("compras/index", {
+      title: "Compras", compras: result.rows, filters,
+      pagination: { page: result.page, pageSize: result.pageSize, total: result.total }
+    });
+  } catch (error) { next(error); }
+});
+
+app.get("/compras/nueva", requireAuth, requireEvent("compra-ocultar"), async (req, res, next) => {
+  try { res.render("compras/form", { title: "Nueva compra", ...await getCompraOptions() }); }
+  catch (error) { next(error); }
+});
+
+app.post("/compras", requireAuth, requireEvent("compra-ocultar"), async (req, res) => {
+  try {
+    const compra = await crearCompra({
+      proveedorId: req.body.fk_idproveedor,
+      formaPagoId: req.body.fk_idforma_pago,
+      condicion: req.body.condicion,
+      productIds: req.body.producto_id,
+      quantities: req.body.cantidad,
+      prices: req.body.precio_compra,
+      creadoPor: currentUser(req)
+    });
+    setFlash(req, "success", `Compra ${compra.numero} creada correctamente.`);
+    res.redirect(`/compras/${compra.idcompra}`);
+  } catch (error) {
+    setFlash(req, "error", userErrorMessage(error));
+    res.redirect("/compras/nueva");
+  }
+});
+
+app.get("/compras/:id", requireAuth, requireEvent("compra-ocultar"), async (req, res, next) => {
+  try {
+    const compra = await obtenerCompra(Number(req.params.id));
+    if (!compra) return res.status(404).render("error", { title: "Compra no encontrada", message: "La compra solicitada no existe." });
+    res.render("compras/detail", { title: `Compra ${compra.numero}`, compra });
+  } catch (error) { next(error); }
+});
+
+app.post("/compras/:id/anular", requireAuth, requireEvent("compra-ocultar"), async (req, res) => {
+  try {
+    await anularCompra(Number(req.params.id), currentUser(req));
+    setFlash(req, "success", "La compra fue anulada; se actualizó el stock y se revirtió el pago, si correspondía.");
+  } catch (error) { setFlash(req, "error", userErrorMessage(error)); }
+  res.redirect(`/compras/${req.params.id}`);
+});
+
+app.post("/compras/:id/marcar-pagada", requireAuth, requireEvent("compra-ocultar"), async (req, res) => {
+  try {
+    await marcarCompraPagada(Number(req.params.id), currentUser(req));
+    setFlash(req, "success", "La compra fue marcada como pagada y registrada en caja.");
+  } catch (error) { setFlash(req, "error", userErrorMessage(error)); }
+  res.redirect(`/compras/${req.params.id}`);
+});
+
 app.get("/usuarios", requireAuth, requireEvent("usuario-ocultar"), async (req, res, next) => {
   try {
     const editId = req.query.edit;
@@ -5543,6 +5727,7 @@ function crudRoutes(pathName, table, fields, title, authorization = {}) {
   app.post(`/${pathName}`, ...mutationMiddleware, uploadMiddleware, async (req, res, next) => {
     try {
       const entries = crudValues(fields, req, false);
+      if (pathName === "productos") entries.push({ name: "precio_compra_base", value: fieldValue(req.body.precio_compra, { type: "money" }) });
       const names = entries.map((entry) => entry.name);
       const values = entries.map((entry) => entry.value);
       const placeholders = names.map((_, index) => `$${index + 1}`);
@@ -5561,6 +5746,7 @@ function crudRoutes(pathName, table, fields, title, authorization = {}) {
   app.post(`/${pathName}/:id`, ...mutationMiddleware, uploadMiddleware, async (req, res, next) => {
     try {
       const entries = crudValues(fields, req, true);
+      if (pathName === "productos") entries.push({ name: "precio_compra_base", value: fieldValue(req.body.precio_compra, { type: "money" }) });
       const names = entries.map((entry) => entry.name);
       const values = entries.map((entry) => entry.value);
       const sets = names.map((name, index) => `${name} = $${index + 1}`);
@@ -5598,6 +5784,20 @@ function crudRoutes(pathName, table, fields, title, authorization = {}) {
         next(error);
       }
     });
+    for (const [suffix, column, label] of [
+      ["toggle-venta", "es_venta", "Venta"],
+      ["toggle-compra", "es_compra", "Compra"]
+    ]) {
+      app.post(`/${pathName}/:id/${suffix}`, ...mutationMiddleware, async (req, res, next) => {
+        try {
+          await query(`update ${table} set ${column} = not ${column} where id = $1`, [req.params.id]);
+          setFlash(req, "success", `Disponibilidad en ${label.toLowerCase()} actualizada.`);
+          res.redirect(`/${pathName}`);
+        } catch (error) {
+          next(error);
+        }
+      });
+    }
   }
 }
 
@@ -5665,6 +5865,8 @@ crudRoutes("formas-pago", "formas_pago", [
   { name: "icono_ruta", label: "Icono PNG", type: "image", uploadFolder: "formas-pago" },
   { name: "color", label: "Color", type: "color" },
   { name: "mostrar_despues_crear", label: "Mostrar despues de crear", type: "checkbox" },
+  { name: "es_venta", label: "Disponible en venta", type: "checkbox" },
+  { name: "es_compra", label: "Disponible en compra", type: "checkbox" },
   { name: "activo", label: "Activo", type: "checkbox" }
 ], "Formas de pago", { accessEvent: "pagos-ocultar" });
 
@@ -5685,6 +5887,14 @@ crudRoutes("productos", "producto", [
   { name: "stock_minimo", label: "Stock minimo", type: "integer", required: true },
   { name: "activo", label: "Activo", type: "checkbox" }
 ], "Productos", { accessEvent: "producto-ocultar" });
+
+crudRoutes("proveedores", "proveedor", [
+  { name: "razon_social", label: "Razón social", required: true, uppercase: true },
+  { name: "ruc", label: "RUC", uppercase: true },
+  { name: "direccion", label: "Dirección", uppercase: true },
+  { name: "telefono", label: "Teléfono", uppercase: true },
+  { name: "activo", label: "Activo", type: "checkbox" }
+], "Proveedores", { accessEvent: "proveedor-ocultar" });
 
 app.use((req, res) => {
   res.status(404).render("error", { title: "No encontrado", message: "Pagina no encontrada." });

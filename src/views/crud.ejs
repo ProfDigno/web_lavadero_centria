@@ -1,6 +1,6 @@
 <%- include('partials/header') %>
-<% const modalCrud = ['clientes', 'servicios', 'servicio-grupos', 'personal', 'grupo-clientes', 'formas-pago', 'gasto-tipos', 'producto-categorias', 'productos'].includes(pathName); %>
-<% const entityLabel = pathName === 'clientes' ? 'cliente' : (pathName === 'servicios' ? 'servicio' : (pathName === 'servicio-grupos' ? 'grupo de servicio' : (pathName === 'personal' ? 'personal' : (pathName === 'grupo-clientes' ? 'grupo de cliente' : (pathName === 'formas-pago' ? 'forma de pago' : (pathName === 'gasto-tipos' ? 'tipo de gasto' : (pathName === 'producto-categorias' ? 'categoria de producto' : (pathName === 'productos' ? 'producto' : 'registro')))))))); %>
+<% const modalCrud = ['clientes', 'servicios', 'servicio-grupos', 'personal', 'grupo-clientes', 'formas-pago', 'gasto-tipos', 'producto-categorias', 'productos', 'proveedores'].includes(pathName); %>
+<% const entityLabel = pathName === 'proveedores' ? 'proveedor' : (pathName === 'clientes' ? 'cliente' : (pathName === 'servicios' ? 'servicio' : (pathName === 'servicio-grupos' ? 'grupo de servicio' : (pathName === 'personal' ? 'personal' : (pathName === 'grupo-clientes' ? 'grupo de cliente' : (pathName === 'formas-pago' ? 'forma de pago' : (pathName === 'gasto-tipos' ? 'tipo de gasto' : (pathName === 'producto-categorias' ? 'categoria de producto' : (pathName === 'productos' ? 'producto' : 'registro'))))))))); %>
 <% const newEntityLabel = pathName === 'formas-pago' ? 'Nueva forma de pago' : (pathName === 'producto-categorias' ? 'Nueva categoria' : 'Nuevo ' + entityLabel); %>
 <% const serviceModule = ['servicios', 'servicio-grupos'].includes(pathName); %>
 <% const canMutate = !serviceModule || canEvent('servicio-ocultar'); %>
@@ -9,9 +9,11 @@
   : pathName === 'grupo-clientes'
     ? ['nombre', 'razon_social', 'ruc', 'telefono', 'es_credito'].map((name) => fields.find((field) => field.name === name)).filter(Boolean)
   : pathName === 'formas-pago'
-    ? ['nombre', 'icono_ruta', 'color', 'mostrar_despues_crear'].map((name) => fields.find((field) => field.name === name)).filter(Boolean)
+    ? ['nombre', 'icono_ruta', 'color', 'mostrar_despues_crear', 'es_venta', 'es_compra'].map((name) => fields.find((field) => field.name === name)).filter(Boolean)
   : pathName === 'productos'
     ? ['codigo', 'nombre', 'fk_idproducto_categoria', 'precio_venta', 'stock_actual'].map((name) => fields.find((field) => field.name === name)).filter(Boolean)
+  : pathName === 'proveedores'
+    ? ['razon_social', 'ruc', 'direccion', 'telefono'].map((name) => fields.find((field) => field.name === name)).filter(Boolean)
   : pathName === 'producto-categorias'
     ? ['nombre', 'descripcion'].map((name) => fields.find((field) => field.name === name)).filter(Boolean)
   : fields.slice(0, 3); %>
@@ -98,7 +100,7 @@
             class="<%= field.type === 'money' ? 'money-input' : '' %>"
             value="<%= editItem && editItem[field.name] != null ? (field.type === 'money' ? formatMoney(editItem[field.name]) : editItem[field.name]) : '' %>"
             <%= field.type === 'money' ? 'inputmode="numeric" data-money-input' : '' %>
-            <%= field.type === 'integer' ? 'inputmode="numeric" min="0" step="1"' : '' %>
+            <%= field.type === 'integer' ? (field.name === 'stock_actual' ? 'inputmode="numeric" step="1"' : 'inputmode="numeric" min="0" step="1"') : '' %>
             <%= field.uppercase ? 'data-uppercase' : '' %>
             <%= field.required ? 'required' : '' %>>
         </label>
@@ -137,7 +139,7 @@
       <thead>
         <tr>
           <th>ID</th>
-          <% tableFields.forEach((field) => { %><th><%= pathName === 'formas-pago' && field.name === 'mostrar_despues_crear' ? 'Mostrar' : field.label %></th><% }) %>
+          <% tableFields.forEach((field) => { %><th><%= pathName === 'formas-pago' && field.name === 'mostrar_despues_crear' ? 'Mostrar' : (pathName === 'formas-pago' && field.name === 'es_venta' ? 'Venta' : (pathName === 'formas-pago' && field.name === 'es_compra' ? 'Compra' : field.label)) %></th><% }) %>
           <% if (!modalCrud) { %><th>Estado</th><% } %>
           <th></th>
         </tr>
@@ -160,12 +162,14 @@
             <td><%= item.id %></td>
             <% tableFields.forEach((field) => { %>
               <td class="<%= field.type === 'money' ? 'money-cell' : '' %>">
-                <% if (pathName === 'formas-pago' && field.name === 'mostrar_despues_crear') { %>
-                  <form class="crud-inline-toggle" action="/formas-pago/<%= item.id %>/toggle-mostrar" method="post">
-                    <label class="toggle-check" title="<%= item[field.name] ? 'Ocultar' : 'Mostrar' %>">
+                <% if (pathName === 'formas-pago' && ['mostrar_despues_crear', 'es_venta', 'es_compra'].includes(field.name)) { %>
+                  <% const toggleLabels = { mostrar_despues_crear: ['Mostrar', 'Ocultar', 'toggle-mostrar'], es_venta: ['Venta', 'Desactivar venta', 'toggle-venta'], es_compra: ['Compra', 'Desactivar compra', 'toggle-compra'] }; %>
+                  <% const toggleLabel = toggleLabels[field.name]; %>
+                  <form class="crud-inline-toggle" action="/formas-pago/<%= item.id %>/<%= toggleLabel[2] %>" method="post">
+                    <label class="toggle-check" title="<%= item[field.name] ? toggleLabel[1] : 'Activar ' + toggleLabel[0].toLowerCase() %>">
                       <input
                         type="checkbox"
-                        aria-label="<%= item[field.name] ? 'Ocultar' : 'Mostrar' %> <%= item.nombre %>"
+                        aria-label="<%= toggleLabel[0] %>: <%= item.nombre %>"
                         <%= item[field.name] ? 'checked' : '' %>
                         onchange="this.form.submit()">
                       <span></span>
@@ -607,7 +611,7 @@
             class="<%= field.type === 'money' ? 'money-input' : '' %>"
             value="<%= editItem && editItem[field.name] != null ? (field.type === 'money' ? formatMoney(editItem[field.name]) : editItem[field.name]) : '' %>"
             <%= field.type === 'money' ? 'inputmode="numeric" data-money-input' : '' %>
-            <%= field.type === 'integer' ? 'inputmode="numeric" min="0" step="1"' : '' %>
+            <%= field.type === 'integer' ? (field.name === 'stock_actual' ? 'inputmode="numeric" step="1"' : 'inputmode="numeric" min="0" step="1"') : '' %>
               <%= field.uppercase ? 'data-uppercase' : '' %>
               <%= field.required ? 'required' : '' %>>
           </label>

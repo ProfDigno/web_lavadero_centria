@@ -1,0 +1,48 @@
+<%- include('../partials/header') %>
+<% const efectivo = formasPago.find((forma) => String(forma.nombre || '').toUpperCase() === 'EFECTIVO'); %>
+<div class="page-head"><div><h1>Nueva compra</h1><p>Seleccione proveedor y productos para ingresar al stock</p></div><a class="button secondary" href="/compras">Volver a compras</a></div>
+<form class="panel stack venta-form" method="post" action="/compras" data-compra-form>
+  <div class="grid two">
+    <label>Proveedor
+      <select name="fk_idproveedor" required>
+        <option value="">Seleccione proveedor</option>
+        <% proveedores.forEach((proveedor) => { %><option value="<%= proveedor.idproveedor %>"><%= proveedor.razon_social %><%= proveedor.ruc ? ' — ' + proveedor.ruc : '' %></option><% }) %>
+      </select>
+    </label>
+    <fieldset class="venta-payment-fieldset"><legend>Forma de pago</legend>
+      <input type="hidden" name="fk_idforma_pago" value="<%= efectivo ? efectivo.idforma_pago : '' %>" data-compra-payment required>
+      <div class="venta-payment-options" role="group" aria-label="Forma de pago">
+        <% formasPago.forEach((forma) => { const selected = efectivo && Number(efectivo.idforma_pago) === Number(forma.idforma_pago); %>
+          <button type="button" class="payment-button venta-payment-option <%= selected ? 'is-active' : '' %>" style="--payment-color: <%= forma.color || '#687385' %>" data-compra-payment-option="<%= forma.idforma_pago %>" aria-pressed="<%= selected ? 'true' : 'false' %>" title="<%= forma.nombre %>">
+            <span class="payment-button-icon"><% if (forma.icono_ruta && String(forma.icono_ruta).startsWith('/uploads/')) { %><img src="<%= forma.icono_ruta %>" alt=""><% } else { %><%= paymentIconLabel(forma.icono_ruta) %><% } %></span>
+            <span class="venta-payment-option-label"><%= forma.nombre %></span>
+          </button>
+        <% }) %>
+      </div>
+    </fieldset>
+    <fieldset class="venta-condition-fieldset"><legend>Condición</legend>
+      <input type="hidden" name="condicion" value="CONTADO" data-compra-condition>
+      <label class="venta-condition-option"><input type="radio" name="condicion_visual" value="CONTADO" checked data-compra-condition-option><span>CONTADO</span></label>
+      <label class="venta-condition-option"><input type="radio" name="condicion_visual" value="CREDITO" data-compra-condition-option><span>CRÉDITO</span></label>
+    </fieldset>
+  </div>
+  <div class="section-title venta-items-heading"><div><h2>Productos</h2><p>El precio inicial viene del catálogo y puede ajustarse para esta compra.</p></div><button type="button" class="secondary" data-add-compra-item>Agregar producto</button></div>
+  <div class="table-wrap venta-items-table-wrap"><table class="venta-items-table"><thead><tr><th>Producto</th><th>Stock actual</th><th>Precio compra</th><th>Cantidad</th><th class="money-cell">Subtotal</th><th></th></tr></thead>
+    <tbody data-compra-items><tr data-compra-item>
+      <td><select name="producto_id[]" required data-compra-product><option value="">Seleccione producto</option><% productos.forEach((producto) => { %><option value="<%= producto.idproducto %>" data-price="<%= producto.precio_compra %>" data-stock="<%= producto.stock_actual %>"><%= producto.codigo %> — <%= producto.nombre %></option><% }) %></select></td>
+      <td data-compra-stock>—</td><td><input name="precio_compra[]" type="number" min="0" step="1" value="0" required data-compra-price></td>
+      <td><input name="cantidad[]" type="number" min="1" step="1" value="1" required data-compra-quantity></td>
+      <td class="money-cell" data-compra-subtotal>Gs. 0</td><td><button type="button" class="link" data-remove-compra-item>Quitar</button></td>
+    </tr></tbody>
+  </table></div>
+  <div class="venta-total-box"><span>Total</span><strong data-compra-total>Gs. 0</strong></div>
+  <div class="actions"><button type="submit">Registrar compra</button><a class="button secondary" href="/compras">Cancelar</a></div>
+</form>
+<template data-compra-item-template><tr data-compra-item>
+  <td><select name="producto_id[]" required data-compra-product><option value="">Seleccione producto</option><% productos.forEach((producto) => { %><option value="<%= producto.idproducto %>" data-price="<%= producto.precio_compra %>" data-stock="<%= producto.stock_actual %>"><%= producto.codigo %> — <%= producto.nombre %></option><% }) %></select></td>
+  <td data-compra-stock>—</td><td><input name="precio_compra[]" type="number" min="0" step="1" value="0" required data-compra-price></td>
+  <td><input name="cantidad[]" type="number" min="1" step="1" value="1" required data-compra-quantity></td>
+  <td class="money-cell" data-compra-subtotal>Gs. 0</td><td><button type="button" class="link" data-remove-compra-item>Quitar</button></td>
+</tr></template>
+<script src="/js/compras.js"></script>
+<%- include('../partials/footer') %>

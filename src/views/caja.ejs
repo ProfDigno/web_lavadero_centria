@@ -24,6 +24,8 @@
   const ventasReversiones = caja.ventas.filter((item) => item.tipo_movimiento === 'EGRESO');
   const totalVentas = ventasIngresos.reduce((sum, item) => sum + Number(item.total || 0), 0);
   const totalReversiones = ventasReversiones.reduce((sum, item) => sum + Number(item.total || 0), 0);
+  const comprasEgresos = caja.compras.filter((item) => item.tipo_movimiento === 'EGRESO');
+  const comprasReversiones = caja.compras.filter((item) => item.tipo_movimiento === 'INGRESO');
 %>
 
 <section class="metrics">
@@ -34,7 +36,29 @@
   <article><span>Efectivo egresado</span><strong><%= formatMoney(caja.resumen.efectivoEgresos) %></strong></article>
   <article class="<%= Number(caja.resumen.efectivoAContar || 0) < 0 ? 'metric-warning' : '' %>"><span>Efectivo a contar</span><strong><%= formatMoney(caja.resumen.efectivoAContar) %></strong></article>
   <article><span>Créditos pendientes</span><strong><%= formatMoney(caja.resumen.creditosPendientesTotal) %></strong><small><%= caja.resumen.creditosPendientesCantidad %> operación(es)</small></article>
+  <article><span>Compras por pagar</span><strong><%= formatMoney(caja.comprasPendientes.reduce((sum, item) => sum + Number(item.total || 0), 0)) %></strong><small><%= caja.comprasPendientes.length %> compra(s)</small></article>
 </section>
+
+<section class="grid two caja-grid">
+  <div><div class="section-title compact-title"><div><h2>Egresos por compras</h2><small>Compras pagadas del día</small></div><strong class="section-total"><%= formatMoney(comprasEgresos.reduce((sum, item) => sum + Number(item.total || 0), 0)) %></strong></div>
+    <div class="table-wrap caja-table-wrap"><table><thead><tr><th>Número</th><th>Fecha</th><th>Proveedor</th><th>Pago</th><th>Total</th></tr></thead><tbody>
+      <% comprasEgresos.forEach((compra) => { %><tr><td><a href="/compras/<%= compra.id %>"><strong><%= compra.numero %></strong></a></td><td><%= formatDateTimeShort(compra.fecha_efectiva) %></td><td><%= compra.proveedor_nombre %></td><td><%- include('partials/payment_chip', { nombre: compra.forma_pago, icono: compra.forma_pago_icono, color: compra.forma_pago_color }) %></td><td class="money-cell"><%= formatMoney(compra.total) %></td></tr><% }) %>
+      <% if (!comprasEgresos.length) { %><tr><td colspan="5">Sin compras pagadas para la fecha.</td></tr><% } %>
+    </tbody></table></div>
+  </div>
+  <div><div class="section-title compact-title"><div><h2>Reversiones de compras</h2><small>Compras anuladas previamente pagadas</small></div><strong class="section-total"><%= formatMoney(comprasReversiones.reduce((sum, item) => sum + Number(item.total || 0), 0)) %></strong></div>
+    <div class="table-wrap caja-table-wrap"><table><thead><tr><th>Número</th><th>Fecha</th><th>Proveedor</th><th>Pago</th><th>Total</th></tr></thead><tbody>
+      <% comprasReversiones.forEach((compra) => { %><tr><td><a href="/compras/<%= compra.id %>"><strong><%= compra.numero %></strong></a></td><td><%= formatDateTimeShort(compra.fecha_efectiva) %></td><td><%= compra.proveedor_nombre %></td><td><%- include('partials/payment_chip', { nombre: compra.forma_pago, icono: compra.forma_pago_icono, color: compra.forma_pago_color }) %></td><td class="money-cell"><%= formatMoney(compra.total) %></td></tr><% }) %>
+      <% if (!comprasReversiones.length) { %><tr><td colspan="5">Sin reversiones para la fecha.</td></tr><% } %>
+    </tbody></table></div>
+  </div>
+</section>
+
+<section class="grid two caja-grid"><div><div class="section-title compact-title"><div><h2>Compras a crédito pendientes</h2><small>No forman parte de los egresos</small></div><strong class="section-total"><%= formatMoney(caja.comprasPendientes.reduce((sum, item) => sum + Number(item.total || 0), 0)) %></strong></div>
+  <div class="table-wrap caja-table-wrap"><table><thead><tr><th>Número</th><th>Fecha</th><th>Proveedor</th><th>Total</th></tr></thead><tbody>
+    <% caja.comprasPendientes.forEach((compra) => { %><tr><td><a href="/compras/<%= compra.id %>"><strong><%= compra.numero %></strong></a></td><td><%= formatDateTimeShort(compra.fecha_compra) %></td><td><%= compra.proveedor_nombre %></td><td class="money-cell"><%= formatMoney(compra.total) %></td></tr><% }) %>
+    <% if (!caja.comprasPendientes.length) { %><tr><td colspan="4">Sin compras a crédito pendientes para la fecha.</td></tr><% } %>
+  </tbody></table></div></div></section>
 
 <section class="grid two caja-grid">
   <div>

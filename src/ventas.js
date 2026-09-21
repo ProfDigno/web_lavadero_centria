@@ -14,6 +14,7 @@ async function getVentaOptions() {
        from formas_pago
        where activo = true
          and mostrar_despues_crear = true
+         and es_venta = true
          and nombre <> 'ANULADO'
        order by nombre, idforma_pago`
     ),
@@ -150,7 +151,8 @@ async function crearVenta({ clienteId, formaPagoId, condicion, productIds, quant
   return withTransaction(async (client) => {
     const paymentResult = await client.query(
       `select idforma_pago from formas_pago
-       where idforma_pago = $1 and activo = true and nombre <> 'ANULADO'`,
+       where idforma_pago = $1 and activo = true
+         and mostrar_despues_crear = true and es_venta = true and nombre <> 'ANULADO'`,
       [fkFormaPago]
     );
     if (!paymentResult.rows.length) throw new Error("La forma de pago no esta disponible.");

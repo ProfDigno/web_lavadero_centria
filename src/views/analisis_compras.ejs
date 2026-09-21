@@ -1,0 +1,45 @@
+<%- include('partials/header') %>
+<% const safeJson = JSON.stringify(chartData || {}).replace(/</g, '\\u003c'); %>
+<div class="page-head"><div><h1>Análisis de compras</h1><p>Resumen de compras, pagos, productos y proveedores</p></div></div>
+<form class="toolbar analysis-filter" method="get" action="/analisis-compras">
+  <label>Fecha inicio<input type="date" name="fecha_inicio" value="<%= fechaInicio %>"></label>
+  <label>Fecha fin<input type="date" name="fecha_fin" value="<%= fechaFin %>"></label>
+  <button type="submit">Ver</button>
+</form>
+<section class="metrics analysis-sales-metrics">
+  <article><span>Compras</span><strong><%= metrics.compras %></strong></article>
+  <article><span>Total comprado</span><strong><%= formatMoney(metrics.total) %></strong></article>
+  <article><span>Compra promedio</span><strong><%= formatMoney(metrics.ticket_promedio) %></strong></article>
+  <article><span>Unidades</span><strong><%= metrics.unidades %></strong></article>
+  <article><span>Contado</span><strong><%= metrics.contado %></strong></article>
+  <article><span>Crédito</span><strong><%= metrics.credito %></strong></article>
+  <article><span>Pagado</span><strong><%= formatMoney(metrics.monto_pagado) %></strong></article>
+  <article><span>Créditos pendientes</span><strong><%= metrics.creditos_pendientes %></strong><small><%= formatMoney(metrics.monto_pendiente) %> por pagar</small></article>
+</section>
+<% if (!metrics.compras || metrics.anuladas) { %><section class="analysis-alerts">
+  <% if (!metrics.compras) { %><div class="flash">Sin compras válidas en el rango seleccionado.</div><% } %>
+  <% if (metrics.anuladas) { %><div class="flash">Se excluyeron <strong><%= metrics.anuladas %></strong> compras anuladas del análisis.</div><% } %>
+</section><% } %>
+<section class="analysis-dashboard-grid">
+  <div class="panel chart-panel chart-panel-wide"><h2>Compras por fecha</h2><div class="chart-box"><canvas data-purchases-chart="daily"></canvas></div></div>
+  <div class="panel chart-panel"><h2>Pagos efectuados por forma</h2><div class="chart-box"><canvas data-purchases-chart="payments"></canvas></div></div>
+  <div class="panel chart-panel"><h2>Productos más comprados</h2><div class="chart-box"><canvas data-purchases-chart="products"></canvas></div></div>
+  <div class="panel chart-panel"><h2>Principales proveedores</h2><div class="chart-box"><canvas data-purchases-chart="suppliers"></canvas></div></div>
+</section>
+<section class="grid two analysis-tables">
+  <div><h2>Pagos efectuados por forma</h2><div class="table-wrap"><table><thead><tr><th>Forma</th><th class="money-cell">Compras</th><th class="money-cell">Total</th></tr></thead><tbody>
+    <% payments.forEach((item) => { %><tr><td><span class="venta-payment-name" style="--venta-payment-color: <%= item.color || '#687385' %>"><%= item.nombre %></span></td><td class="money-cell"><%= item.cantidad %></td><td class="money-cell"><%= formatMoney(item.total) %></td></tr><% }) %>
+    <% if (!payments.length) { %><tr><td colspan="3">Sin movimientos.</td></tr><% } %>
+  </tbody></table></div></div>
+  <div><h2>Productos más comprados</h2><div class="table-wrap"><table><thead><tr><th>Producto</th><th class="money-cell">Unidades</th><th class="money-cell">Total</th></tr></thead><tbody>
+    <% products.forEach((item) => { %><tr><td><strong><%= item.codigo %></strong> - <%= item.nombre %></td><td class="money-cell"><%= item.cantidad %></td><td class="money-cell"><%= formatMoney(item.total) %></td></tr><% }) %>
+    <% if (!products.length) { %><tr><td colspan="3">Sin productos comprados.</td></tr><% } %>
+  </tbody></table></div></div>
+  <div><h2>Principales proveedores</h2><div class="table-wrap"><table><thead><tr><th>Proveedor</th><th class="money-cell">Compras</th><th class="money-cell">Total</th></tr></thead><tbody>
+    <% suppliers.forEach((item) => { %><tr><td><%= item.nombre %></td><td class="money-cell"><%= item.cantidad %></td><td class="money-cell"><%= formatMoney(item.total) %></td></tr><% }) %>
+    <% if (!suppliers.length) { %><tr><td colspan="3">Sin proveedores.</td></tr><% } %>
+  </tbody></table></div></div>
+</section>
+<script id="analysis-compras-data" type="application/json"><%- safeJson %></script>
+<script src="/vendor/chart.js/chart.umd.js"></script><script src="/js/analisis_compras.js"></script>
+<%- include('partials/footer') %>
